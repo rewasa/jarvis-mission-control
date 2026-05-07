@@ -6,3 +6,8 @@ dist/
 __pycache__/
 *.py[cod]
 *$py.class
+
+# Plan and skill files (internal only)
+PLAN.md
+*_PLAN.md
+skills/**/SKILL.md
