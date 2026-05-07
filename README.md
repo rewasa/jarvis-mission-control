@@ -40,15 +40,16 @@ During a heartbeat, the Hermes session is asked to make progress, retry with a d
 ```bash
 git clone https://github.com/Agent-3-7/hermes-agent-mission-control.git
 cd hermes-agent-mission-control
-./start.sh
+npm install
+npm run dev
 ```
 
 Open [http://localhost:6969](http://localhost:6969), create a task, and send your first message.
 
-Development mode:
+Production build:
 
 ```bash
-npm install && npm run dev
+npm run prod
 ```
 
 No `.env` file needed. Defaults work out of the box.

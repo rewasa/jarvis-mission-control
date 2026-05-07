@@ -6,7 +6,6 @@ import app, { adapter } from './app.js';
 import { mountFrontend, type FrontendCleanup } from './frontend.js';
 import { startHeartbeatScheduler, stopHeartbeatScheduler } from './heartbeat/scheduler.js';
 import { getHeartbeatSettings } from './db/queries.js';
-import { ensureMinionsStateDirs } from './paths.js';
 import { ensureBundledSkillsLinked } from './skills/catalog.js';
 
 const PORT = parseInt(process.env.PORT || '6969', 10);
@@ -18,7 +17,6 @@ let shuttingDown = false;
 type ShutdownReason = NodeJS.Signals | 'startup-error';
 
 async function main() {
-  ensureMinionsStateDirs();
   ensureBundledSkillsLinked();
   closeFrontend = await mountFrontend(app, httpServer);
   await adapter.start();

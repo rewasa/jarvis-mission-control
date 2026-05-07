@@ -24,8 +24,7 @@ The server spawns a Python worker subprocess that imports Hermes `AIAgent` direc
 npm run dev          # dev mode: tsx watch + Vite dev server on :6969
 npm run build        # production build: server (tsc) + client (vite) + copy .sql/.py assets
 npm run start        # run compiled production build
-./start.sh           # build + run production (auto-installs deps, creates state dirs)
-./start.sh --dev     # run in dev mode via start.sh
+npm run prod         # build + run production in one command
 ```
 
 No test suite or linter is configured.
@@ -72,7 +71,7 @@ All persistent state lives under `MINIONS_HOME` (default: `~/.minions/`):
 - **Per-task model/reasoning**: Each task can override the default Hermes model and reasoning effort (`agent_model`, `reasoning_effort` columns on `tasks`). Settings logic lives in `server/agent-settings.ts`. The Python worker resolves the final model/provider from Hermes config + per-task overrides.
 - **Heartbeat status parsing**: Agent responses must contain a `<status_report>` / `</status_report>` block with JSON. Unparseable responses are logged but don't crash.
 - **Heartbeat visibility**: `summary` and optional `user_summary` are saved to `heartbeat_log` and shown only in the Activity tab. Heartbeat turns remain in Hermes session history for agent continuity, but the chat projection filters them out.
-- **Heartbeat eligibility**: Heartbeat only checks `in_progress` tasks with a non-null `last_agent_response_at` older than the DB-backed heartbeat idle-delay setting. The heartbeat interval and idle delay both default to 15 minutes and are editable from Settings. Background heartbeat stays below total Python worker capacity (`HERMES_AGENT_RUN_LIMIT`) so user chat always has at least one slot available, and skips tasks that already have an active agent run.
+- **Heartbeat eligibility**: Heartbeat checks `in_progress` tasks whose last activity (`last_agent_response_at`, falling back to `created_at`) is older than the DB-backed heartbeat idle-delay setting. The heartbeat interval and idle delay both default to 15 minutes and are editable from Settings. Background heartbeat stays below total Python worker capacity (`HERMES_AGENT_RUN_LIMIT`) so user chat always has at least one slot available, and skips tasks that already have an active agent run.
 - **Live chat**: `POST /api/tasks/:id/messages` returns `202` immediately with a `runId`. The server consumes the agent stream in the background via `consumeChatRun()` in `server/routes/chat.ts`. Clients subscribe to `GET /api/tasks/:id/live` SSE for real-time `text_delta`, `thinking_delta`, `tool_progress`, `done`, and `error` events. On connect, the client receives a snapshot of the current in-memory `LiveChatRun` if one exists. Runs are kept in memory briefly after completion (30s normal, 5min on error) so late-connecting clients can catch up.
 - **Live-chat state** (`server/live-chat.ts`): In-memory `Map<taskId, LiveChatRun>` accumulates streaming events into structured messages (user + assistant with tools/thinking/usage). This is ephemeral — on server restart, active run state is lost, but the Hermes session history remains in SessionDB.
 - **SSE board events**: `/api/events` broadcasts board-level events (task CRUD) to all clients. Separate from per-task live chat SSE.
@@ -138,8 +137,7 @@ User creates task via UI
 ```
 Heartbeat scheduler fires (DB-configured, 15 minutes by default)
   → Query: all tasks WHERE status = 'in_progress'
-      AND last_agent_response_at IS NOT NULL
-      AND last_agent_response_at <= now - configured idle delay
+      AND COALESCE(last_agent_response_at, created_at) <= now - configured idle delay
   → For each task (batched by HEARTBEAT_CONCURRENCY, skipping busy tasks):
       → Fetch last 3 heartbeat summaries for context
       → Send check-in prompt to agent via adapter.chat(task.id, ...)

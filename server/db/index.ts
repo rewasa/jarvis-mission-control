@@ -2,9 +2,11 @@ import Database from 'better-sqlite3';
 import { readFileSync } from 'node:fs';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { resolveMinionsDbPath } from '../paths.js';
+import { resolveMinionsDbPath, ensureMinionsStateDirs } from '../paths.js';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
+
+ensureMinionsStateDirs();
 
 const dbPath = resolveMinionsDbPath();
 

@@ -32,10 +32,11 @@ export async function runHeartbeat(adapter: AgentAdapter): Promise<boolean> {
   try {
     const settings = queries.getHeartbeatSettings();
     const idleCutoff = Date.now() - settings.idleMinutes * 60_000;
-    const tasks = queries.getAllTasks('in_progress').filter((t) =>
-      t.last_agent_response_at !== null && t.last_agent_response_at <= idleCutoff
-    );
-    const now = new Date().toLocaleString('en-US', { timeZone: 'America/New_York', dateStyle: 'medium', timeStyle: 'long' });
+    const tasks = queries.getAllTasks('in_progress').filter((t) => {
+      const lastActivity = t.last_agent_response_at ?? t.created_at;
+      return lastActivity <= idleCutoff;
+    });
+    const now = new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'long' });
     console.log(`[heartbeat] ${now} — checking ${tasks.length} in-progress tasks`);
 
     for (let i = 0; i < tasks.length; i += HEARTBEAT_CONCURRENCY) {
