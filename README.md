@@ -4,9 +4,9 @@
 
 Hermes Agent is powerful, but running real work on it means juggling terminal sessions, losing track of which job finished, and manually checking on long-running tasks. The more you delegate, the harder it gets to manage.
 
-Minions gives you one screen for all of it.
+Minions gives you one screen to create, supervise, and review autonomous Hermes Agent work.
 
-Create tasks through chat, and your Hermes agent works on them autonomously, running tools, spawning sessions, scheduling cron jobs. Automatic heartbeat check-ins tell you what's progressing, what's blocked, and what's ready for review. You supervise the board. The agent does the work.
+[Try hosted on Agent37](https://www.agent37.com) · [Run locally](#quick-start) · [Watch demo](#demo)
 
 ## Demo
 
@@ -35,7 +35,7 @@ During a heartbeat, the Hermes session is asked to make progress, retry with a d
 - **Human-in-the-loop**: agents propose completion; you verify and close. Nothing moves to done without your sign-off
 - **Per-task model control**: override model and reasoning effort on any task
 - **Cron visibility**: see every scheduled Hermes job, its history, and output
-- **Local-first**: SQLite, no account, no hosted service. Your data stays on your machine
+- **Local-first option**: self-host with SQLite, no account, and no cloud dependency. Your local data stays on your machine
 
 ## Quick Start
 
@@ -75,10 +75,6 @@ Each task is a persistent Hermes root session. You talk to it, it works, it chec
 - **Hermes power users** juggling multiple sessions across projects
 - **Indie founders** delegating research, ops, writing, and coding to their agent
 - **Anyone running long-lived Hermes work** who needs to know what finished, what's stuck, and what needs attention
-
-## Hosted Version
-
-Don't want to self-host? [Agent37](https://www.agent37.com) offers Minions as a hosted service with team features.
 
 ## Roadmap
 
