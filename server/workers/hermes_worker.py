@@ -348,7 +348,14 @@ def _dedupe(values: list[str]) -> list[str]:
     return out
 
 
-def _add_model(groups: dict[str, list[dict[str, Any]]], provider: str, model_id: str, source: str, default_model: str | None) -> None:
+def _add_model(
+    groups: dict[str, list[dict[str, Any]]],
+    provider: str,
+    model_id: str,
+    source: str,
+    default_model: str | None,
+    label: str | None = None,
+) -> None:
     if not model_id:
         return
     bucket = groups.setdefault(provider or "configured", [])
@@ -356,7 +363,7 @@ def _add_model(groups: dict[str, list[dict[str, Any]]], provider: str, model_id:
         return
     bucket.append({
         "id": model_id,
-        "label": model_id,
+        "label": label or model_id,
         "source": source,
         "isCurrentDefault": bool(default_model and model_id == default_model),
     })
@@ -379,17 +386,82 @@ def _provider_model_ids(provider: str) -> list[str]:
     return [str(model).strip() for model in models or [] if str(model).strip()]
 
 
+def _groups_have_model(groups: dict[str, list[dict[str, Any]]], model_id: str) -> bool:
+    return any(
+        item.get("id") == model_id
+        for models in groups.values()
+        for item in models
+    )
+
+
+def _model_option_id(provider: str | None, model_id: str, active_provider: str | None) -> str:
+    if not provider or provider == active_provider:
+        return model_id
+    if provider.startswith("custom:"):
+        return model_id
+    return f"@{provider}:{model_id}"
+
+
+def _list_authenticated_model_groups(
+    cfg: dict[str, Any],
+    defaults: dict[str, Any],
+) -> dict[str, list[dict[str, Any]]] | None:
+    try:
+        from hermes_cli.model_switch import list_authenticated_providers
+    except Exception:
+        return None
+
+    providers_cfg = cfg.get("providers")
+    user_providers = providers_cfg if isinstance(providers_cfg, dict) else {}
+    custom_providers = _custom_providers(cfg)
+    active_provider = defaults["provider"]
+    default_model = defaults["model"]
+    groups: dict[str, list[dict[str, Any]]] = {}
+
+    try:
+        providers = list_authenticated_providers(
+            current_provider=active_provider or "",
+            current_base_url=defaults.get("baseUrl") or "",
+            current_model=default_model or "",
+            user_providers=user_providers,
+            custom_providers=custom_providers,
+            max_models=500,
+        )
+    except Exception:
+        return None
+
+    for provider_info in providers:
+        if not isinstance(provider_info, dict):
+            continue
+        slug = _string_or_none(provider_info.get("slug"))
+        group_name = _string_or_none(provider_info.get("name")) or slug or "configured"
+        is_user_defined = bool(provider_info.get("is_user_defined"))
+        source = "custom" if is_user_defined else "catalog"
+        models = provider_info.get("models")
+        if not isinstance(models, list):
+            continue
+        for raw_model in models:
+            model_id = _string_or_none(raw_model)
+            if not model_id:
+                continue
+            option_id = model_id if is_user_defined else _model_option_id(slug, model_id, active_provider)
+            _add_model(groups, group_name, option_id, source, default_model, label=model_id)
+
+    return groups
+
+
 def _list_models() -> dict[str, Any]:
     cfg = _load_config()
     defaults = _defaults_from_config(cfg)
     default_model = defaults["model"]
     active_provider = defaults["provider"]
-    groups: dict[str, list[dict[str, Any]]] = {}
+    authenticated_groups = _list_authenticated_model_groups(cfg, defaults)
+    groups = authenticated_groups or {}
 
-    if default_model:
+    if default_model and not _groups_have_model(groups, default_model):
         _add_model(groups, active_provider or "current", default_model, "current", default_model)
 
-    if active_provider:
+    if active_provider and authenticated_groups is None:
         for model_id in _provider_model_ids_with_timeout(active_provider):
             _add_model(groups, active_provider, model_id, "catalog", default_model)
 
