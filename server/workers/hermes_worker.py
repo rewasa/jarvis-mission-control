@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import dataclasses
 import inspect
 import json
 import os
@@ -63,6 +64,21 @@ _CRON_TICKER_LOCK = threading.Lock()
 _CONFIG_CACHE: dict[str, Any] | None = None
 _CONFIG_MTIME: float = 0.0
 _MODEL_EXECUTOR = ThreadPoolExecutor(max_workers=1)
+try:
+    _MODEL_LIST_CACHE_TTL_SECONDS = max(0.0, float(os.environ.get("MINIONS_MODEL_LIST_CACHE_TTL_SECONDS", "60")))
+except ValueError:
+    _MODEL_LIST_CACHE_TTL_SECONDS = 60.0
+
+
+@dataclasses.dataclass
+class _ModelListCache:
+    data: dict[str, Any]
+    config_mtime: float
+    expires_at: float
+
+
+_MODEL_LIST_CACHE: _ModelListCache | None = None
+_MODEL_LIST_CACHE_LOCK = threading.Lock()
 
 
 class WorkerError(Exception):
@@ -235,6 +251,12 @@ def _load_config() -> dict[str, Any]:
     return result
 
 
+def _clear_model_list_cache() -> None:
+    global _MODEL_LIST_CACHE
+    with _MODEL_LIST_CACHE_LOCK:
+        _MODEL_LIST_CACHE = None
+
+
 def _model_section(cfg: dict[str, Any]) -> dict[str, Any]:
     model_cfg = cfg.get("model")
     if isinstance(model_cfg, dict):
@@ -274,8 +296,11 @@ def _set_defaults(request: dict[str, Any]) -> dict[str, Any]:
         raw_model = request["model"]
         if isinstance(raw_model, str) and raw_model.strip():
             model_val = raw_model.strip()
-            if model_val.startswith("@") and ":" in model_val:
-                provider_hint, bare_model = model_val[1:].split(":", 1)
+            parsed = _parse_provider_model(model_val)
+            if parsed:
+                provider_hint, bare_model = parsed
+                if provider_hint and not _provider_hint_is_available(provider_hint):
+                    _raise_invalid_provider(provider_hint)
                 cfg["model"]["default"] = bare_model
                 cfg["model"]["provider"] = provider_hint
             else:
@@ -291,6 +316,7 @@ def _set_defaults(request: dict[str, Any]) -> dict[str, Any]:
 
     save_config(cfg)
     _CONFIG_CACHE = None
+    _clear_model_list_cache()
 
     return _defaults_from_config(cfg)
 
@@ -370,6 +396,35 @@ def _custom_provider_models(entry: dict[str, Any]) -> list[str]:
                     models.append(mid.strip())
 
     return _dedupe(models)
+
+
+def _parse_provider_model(raw: str) -> tuple[str, str] | None:
+    if raw.startswith("@") and ":" in raw:
+        provider, model = raw[1:].split(":", 1)
+        return provider, model
+    return None
+
+
+def _provider_hint_is_available(provider: str) -> bool:
+    if provider.startswith("custom:"):
+        return True
+    try:
+        from hermes_cli.runtime_provider import resolve_runtime_provider  # type: ignore
+
+        resolve_runtime_provider(requested=provider)
+        return True
+    except ImportError:
+        return True
+    except Exception:
+        return False
+
+
+def _raise_invalid_provider(provider: str) -> None:
+    raise WorkerError(
+        f"Provider '{provider}' is not configured or runnable by this Hermes install.",
+        code="invalid_provider",
+        hint="Choose a configured provider, or configure this provider in Hermes first.",
+    )
 
 
 def _dedupe(values: list[str]) -> list[str]:
@@ -471,6 +526,8 @@ def _list_authenticated_model_groups(
         slug = _string_or_none(provider_info.get("slug"))
         group_name = _string_or_none(provider_info.get("name")) or slug or "configured"
         is_user_defined = bool(provider_info.get("is_user_defined"))
+        if not is_user_defined and slug and not _provider_hint_is_available(slug):
+            continue
         source = "custom" if is_user_defined else "catalog"
         models = provider_info.get("models")
         if not isinstance(models, list):
@@ -486,7 +543,16 @@ def _list_authenticated_model_groups(
 
 
 def _list_models() -> dict[str, Any]:
+    global _MODEL_LIST_CACHE
+
     cfg = _load_config()
+    config_mtime = _CONFIG_MTIME
+    now = time.monotonic()
+    with _MODEL_LIST_CACHE_LOCK:
+        cached = _MODEL_LIST_CACHE
+        if cached is not None and cached.config_mtime == config_mtime and now < cached.expires_at:
+            return cached.data
+
     defaults = _defaults_from_config(cfg)
     default_model = defaults["model"]
     active_provider = defaults["provider"]
@@ -522,11 +588,20 @@ def _list_models() -> dict[str, Any]:
                         "isCurrentDefault": bool(default_model and alias.strip() == default_model),
                     })
 
-    return {
+    result = {
         "defaultModel": default_model,
         "activeProvider": active_provider,
         "groups": [{"provider": provider, "models": models} for provider, models in groups.items()],
     }
+
+    with _MODEL_LIST_CACHE_LOCK:
+        _MODEL_LIST_CACHE = _ModelListCache(
+            data=result,
+            config_mtime=config_mtime,
+            expires_at=time.monotonic() + _MODEL_LIST_CACHE_TTL_SECONDS,
+        )
+
+    return result
 
 
 def _resolve_model_provider(requested_model: str | None, cfg: dict[str, Any] | None = None) -> tuple[str, str | None, str | None]:
@@ -549,8 +624,9 @@ def _resolve_model_provider(requested_model: str | None, cfg: dict[str, Any] | N
         if model_id in _custom_provider_models(entry):
             return model_id, f"custom:{name.lower().replace(' ', '-')}", _string_or_none(entry.get("base_url"))
 
-    if model_id.startswith("@") and ":" in model_id:
-        provider_hint, bare_model = model_id[1:].split(":", 1)
+    parsed = _parse_provider_model(model_id)
+    if parsed:
+        provider_hint, bare_model = parsed
         return bare_model, provider_hint or config_provider, None
 
     if "/" in model_id:
@@ -1093,7 +1169,7 @@ def _create_agent(
     resolved_model, resolved_provider, resolved_base_url = _resolve_model_provider(requested_model, cfg)
 
     try:
-        from hermes_cli.runtime_provider import resolve_runtime_provider
+        from hermes_cli.runtime_provider import resolve_runtime_provider  # type: ignore
 
         runtime = resolve_runtime_provider(
             requested=resolved_provider,
