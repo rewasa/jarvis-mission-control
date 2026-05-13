@@ -6,6 +6,7 @@ import type { Task } from '@shared/types';
 import { timeAgo } from '../lib/format';
 import { hasUnseenAgentResponse } from '../lib/taskState';
 import { TaskContextMenu } from './TaskContextMenu';
+import { RenameTitle } from './RenameTitle';
 
 function TaskCardBody({ task, isStreaming = false }: { task: Task; isStreaming?: boolean }) {
   const isUnseen = hasUnseenAgentResponse(task);
@@ -17,13 +18,13 @@ function TaskCardBody({ task, isStreaming = false }: { task: Task; isStreaming?:
 
   return (
     <div>
-      <p
-        className={`text-sm text-zinc-900 dark:text-zinc-100 line-clamp-2 ${
+      <RenameTitle
+        value={task.title}
+        identity={task.id}
+        className={`block text-sm text-zinc-900 dark:text-zinc-100 line-clamp-2 ${
           isUnseen ? 'font-semibold' : 'font-medium'
         }`}
-      >
-        {task.title}
-      </p>
+      />
       {task.description && (
         <p
           className={`mt-1 text-xs line-clamp-1 ${

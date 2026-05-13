@@ -29,3 +29,67 @@
     --surface: 0 0% 12%;
   }
 }
+
+@layer components {
+  .rename-title-shell {
+    position: relative;
+    isolation: isolate;
+    overflow: hidden;
+  }
+
+  .rename-title-layout-hidden {
+    opacity: 0;
+  }
+
+  .rename-title-reveal {
+    pointer-events: none;
+    position: absolute;
+    inset: 0;
+  }
+
+  .rename-title-typed {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    white-space: inherit;
+    text-overflow: inherit;
+  }
+
+  .rename-title-caret {
+    display: inline-block;
+    width: 1px;
+    height: 0.95em;
+    margin-left: 1px;
+    vertical-align: -0.12em;
+    background: currentColor;
+    opacity: 0.55;
+    animation: rename-title-caret 700ms steps(1, end) infinite;
+  }
+
+  .rename-title-shell:not(:focus-within) .rename-title-input-hidden {
+    color: transparent;
+  }
+}
+
+@keyframes rename-title-caret {
+  0%, 45% {
+    opacity: 0.55;
+  }
+  46%, 100% {
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rename-title-layout-hidden {
+    opacity: 1;
+  }
+
+  .rename-title-reveal {
+    display: none;
+  }
+
+  .rename-title-shell .rename-title-input-hidden {
+    color: inherit;
+  }
+}

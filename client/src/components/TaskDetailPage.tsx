@@ -10,6 +10,7 @@ import { STATUS_META } from '../lib/constants';
 import { timeAgo } from '../lib/format';
 import { isEditableTarget } from '../lib/keyboard';
 import { TaskChat } from './TaskChat';
+import { RenameReveal, useRenameAnimation } from './RenameTitle';
 import type { AgentRunSettings } from '../lib/api';
 import type { TaskStatus } from '@shared/types';
 
@@ -34,6 +35,7 @@ export function TaskDetailPage() {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const markViewedInFlightRef = useRef<string | null>(null);
+  const titleAnimation = useRenameAnimation(task?.title ?? '', task?.id ?? null);
 
   useEffect(() => {
     if (task) setTitleDraft(task.title);
@@ -132,7 +134,8 @@ export function TaskDetailPage() {
   }
 
   const statusMeta = STATUS_META[task.status];
-  const titleMeasureText = titleDraft || 'Name this task';
+  const titleMeasureText =
+    (titleAnimation.isAnimating ? task.title : titleDraft) || 'Name this task';
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -140,10 +143,10 @@ export function TaskDetailPage() {
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
             <div className="-ml-2 inline-flex max-w-full items-center gap-1 rounded-md px-2 py-1 transition-colors hover:bg-zinc-100/80 focus-within:bg-white focus-within:ring-1 focus-within:ring-zinc-200 dark:hover:bg-zinc-800/80 dark:focus-within:bg-zinc-900 dark:focus-within:ring-zinc-700">
-              <div className="relative min-w-[8ch] max-w-[calc(100%-1.75rem)] shrink overflow-hidden">
+              <div className="rename-title-shell relative min-w-[8ch] max-w-[calc(100%-1.75rem)] shrink overflow-hidden text-zinc-900 dark:text-zinc-100">
                 <span
                   aria-hidden="true"
-                  className="invisible block truncate whitespace-pre text-xl font-semibold leading-8"
+                  className="invisible block whitespace-pre text-xl font-semibold leading-8"
                 >
                   {titleMeasureText}
                 </span>
@@ -166,7 +169,13 @@ export function TaskDetailPage() {
                   }}
                   aria-label="Task title"
                   placeholder="Name this task"
-                  className="absolute inset-0 h-full w-full cursor-text bg-transparent px-0 py-0 text-xl font-semibold leading-8 text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500"
+                  className={`absolute inset-0 h-full w-full cursor-text bg-transparent px-0 py-0 text-xl font-semibold leading-8 outline-none placeholder:text-zinc-400 dark:placeholder:text-zinc-500 ${
+                    titleAnimation.isAnimating ? 'rename-title-input-hidden' : ''
+                  }`}
+                />
+                <RenameReveal
+                  animation={titleAnimation}
+                  className="text-xl font-semibold leading-8"
                 />
               </div>
               <button

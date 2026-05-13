@@ -1,6 +1,7 @@
 import { Link, useMatch, useLocation } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { useStore } from '../lib/store';
+import { RenameTitle } from './RenameTitle';
 
 export function Header() {
   const location = useLocation();
@@ -46,9 +47,11 @@ export function Header() {
             <ChevronRight size={14} className="text-zinc-300 dark:text-zinc-600 shrink-0" />
           </>
         )}
-        <span className={`text-sm font-medium text-zinc-900 dark:text-zinc-100${truncate ? ' truncate' : ''}`}>
-          {title}
-        </span>
+        <RenameTitle
+          value={title}
+          identity={task?.id ?? location.pathname}
+          className={`inline-block min-w-0 text-sm font-medium text-zinc-900 dark:text-zinc-100${truncate ? ' max-w-full truncate' : ''}`}
+        />
       </div>
     </header>
   );
