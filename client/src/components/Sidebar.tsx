@@ -12,15 +12,47 @@ export function Sidebar() {
   const toggleSidebar = useStore((s) => s.toggleSidebar);
 
   useEffect(() => {
+    let chordKey: string | null = null;
+    let chordTimeout: ReturnType<typeof setTimeout> | null = null;
+
     function handleKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement;
+      const editable = target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable;
+
       const mod = isMac ? e.metaKey : e.ctrlKey;
       if (mod && e.shiftKey && e.key.toLowerCase() === 'o') {
         e.preventDefault();
         navigate('/tasks/new');
+        return;
+      }
+
+      if (editable || e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return;
+
+      const key = e.key.toLowerCase();
+
+      if (chordKey === 'g') {
+        chordKey = null;
+        if (chordTimeout) clearTimeout(chordTimeout);
+        const routes: Record<string, string> = { t: '/', f: '/files' };
+        if (routes[key]) {
+          e.preventDefault();
+          navigate(routes[key]);
+        }
+        return;
+      }
+
+      if (key === 'g') {
+        chordKey = 'g';
+        if (chordTimeout) clearTimeout(chordTimeout);
+        chordTimeout = setTimeout(() => { chordKey = null; }, 500);
       }
     }
+
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+    return () => {
+      window.removeEventListener('keydown', handleKeyDown);
+      if (chordTimeout) clearTimeout(chordTimeout);
+    };
   }, [navigate]);
 
   const isActive = (path: string) => {
@@ -74,6 +106,7 @@ export function Sidebar() {
           to="/"
           active={isActive('/')}
           collapsed={collapsed}
+          shortcut={['G', 'T']}
         />
         <SidebarLink
           icon={<Folder size={18} />}
@@ -81,6 +114,7 @@ export function Sidebar() {
           to="/files"
           active={isActive('/files')}
           collapsed={collapsed}
+          shortcut={['G', 'F']}
         />
         <SidebarLink
           icon={<CalendarClock size={18} />}
@@ -122,12 +156,12 @@ function SidebarLink({
   to: string;
   active: boolean;
   collapsed: boolean;
-  shortcut?: string;
+  shortcut?: string | string[];
 }) {
   return (
     <Link
       to={to}
-      title={collapsed ? (shortcut ? `${label} (${shortcut})` : label) : undefined}
+      title={collapsed ? (shortcut ? `${label} (${Array.isArray(shortcut) ? shortcut.join(' then ') : shortcut})` : label) : undefined}
       className={`group w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
         active
           ? 'bg-surface dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm'
@@ -139,10 +173,26 @@ function SidebarLink({
       </span>
       {!collapsed && <span className="truncate">{label}</span>}
       {!collapsed && shortcut && (
-        <span className="ml-auto text-xs text-zinc-400 dark:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity tracking-widest">
-          {shortcut}
-        </span>
+        Array.isArray(shortcut) ? (
+          <span className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+            <Kbd>{shortcut[0]}</Kbd>
+            <span className="text-[10px] text-zinc-400 dark:text-zinc-500">then</span>
+            <Kbd>{shortcut[1]}</Kbd>
+          </span>
+        ) : (
+          <span className="ml-auto text-xs text-zinc-400 dark:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity tracking-widest">
+            {shortcut}
+          </span>
+        )
       )}
     </Link>
+  );
+}
+
+function Kbd({ children }: { children: React.ReactNode }) {
+  return (
+    <kbd className="text-[11px] font-medium leading-none px-1.5 py-0.5 rounded border border-zinc-300/60 dark:border-zinc-700 bg-white dark:bg-zinc-800 text-zinc-400 dark:text-zinc-500 shadow-[0_1px_0_0_rgba(0,0,0,0.05)]">
+      {children}
+    </kbd>
   );
 }
