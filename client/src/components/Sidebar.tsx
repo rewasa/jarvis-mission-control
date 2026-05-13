@@ -24,7 +24,7 @@ export function Sidebar() {
   }, [navigate]);
 
   const isActive = (path: string) => {
-    if (path === '/') return location.pathname === '/' || location.pathname.startsWith('/tasks/');
+    if (path === '/') return location.pathname === '/' || (location.pathname.startsWith('/tasks/') && location.pathname !== '/tasks/new');
     return location.pathname === path;
   };
 
@@ -64,7 +64,7 @@ export function Sidebar() {
           icon={<SquarePen size={18} />}
           label="New Task"
           to="/tasks/new"
-          active={false}
+          active={isActive('/tasks/new')}
           collapsed={collapsed}
           shortcut={isMac ? '⇧⌘O' : 'Ctrl+⇧+O'}
         />
