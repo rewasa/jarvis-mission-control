@@ -43,6 +43,7 @@ import {
 } from '../lib/api';
 import { formatBytes, formatDate, toErrorMessage } from '../lib/format';
 import { isEditableTarget } from '../lib/keyboard';
+import { CsvEditor } from './CsvEditor';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 
 const DEFAULT_FILE_BROWSER_PATH = '~/.minions/workspace';
@@ -1052,12 +1053,16 @@ function EditorView({
         </div>
       )}
 
-      <textarea
-        value={content}
-        onChange={(event) => onContentChange(event.target.value)}
-        spellCheck={false}
-        className="min-h-0 flex-1 resize-none border-0 bg-white p-4 font-mono text-sm leading-relaxed text-zinc-900 outline-none dark:bg-zinc-950 dark:text-zinc-100"
-      />
+      {isCsvFile(file.name) ? (
+        <CsvEditor content={content} onContentChange={onContentChange} />
+      ) : (
+        <textarea
+          value={content}
+          onChange={(event) => onContentChange(event.target.value)}
+          spellCheck={false}
+          className="min-h-0 flex-1 resize-none border-0 bg-white p-4 font-mono text-sm leading-relaxed text-zinc-900 outline-none dark:bg-zinc-950 dark:text-zinc-100"
+        />
+      )}
     </div>
   );
 }
@@ -1282,6 +1287,10 @@ function statusTextFor({
 
 function pluralize(count: number, singular: string): string {
   return count === 1 ? singular : `${singular}s`;
+}
+
+function isCsvFile(name: string): boolean {
+  return fileExtension(name) === 'csv';
 }
 
 function isSameOrChildPath(parentPath: string, childPath: string): boolean {
