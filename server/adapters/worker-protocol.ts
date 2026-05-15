@@ -3,8 +3,6 @@ import type {
   AgentModelsResponse,
   Routine,
   RoutineInput,
-  RoutineRun,
-  RoutineRunContent,
   SessionMetadata,
   TaskMessage,
   ContextUsage,
@@ -20,8 +18,6 @@ export type WorkerRequest =
   | { id: string; type: 'routines.jobs.get'; jobId: string }
   | { id: string; type: 'routines.jobs.create' } & RoutineInput
   | { id: string; type: 'routines.jobs.update'; jobId: string } & Partial<RoutineInput>
-  | { id: string; type: 'routines.jobs.runs'; jobId: string; limit?: number }
-  | { id: string; type: 'routines.jobs.run.content'; jobId: string; runId: string }
   | { id: string; type: 'routines.jobs.pause'; jobId: string; reason?: string }
   | { id: string; type: 'routines.jobs.resume'; jobId: string }
   | { id: string; type: 'routines.jobs.run'; jobId: string }
@@ -64,8 +60,6 @@ export type WorkerResult =
   | AgentModelsResponse
   | { jobs: Routine[] }
   | { job: Routine | null }
-  | { runs: RoutineRun[] }
-  | RoutineRunContent
   | { executed: number }
   | { messages: TaskMessage[] }
   | { session: SessionMetadata | null }

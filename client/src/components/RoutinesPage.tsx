@@ -68,7 +68,6 @@ const ROUTES = {
 };
 
 type RunFilterMode = 'all' | 'errors';
-type DeliveryMode = 'local' | 'channel';
 type RepeatMode = 'forever' | 'once' | 'times';
 
 type PendingAction = {
@@ -100,7 +99,6 @@ type RoutineFormState = {
   intervalValue: string;
   intervalUnit: IntervalUnit;
   rawSchedule: string;
-  deliveryMode: DeliveryMode;
   deliver: string;
   model: string;
   workdir: string;
@@ -222,7 +220,7 @@ function RoutineMetaPills({ routine }: { routine: Routine }) {
 
 function deliveryLabel(routine: Routine): string {
   const deliver = routine.deliver?.trim();
-  if (!deliver || deliver === 'local') return 'Save here';
+  if (!deliver || deliver === 'local') return 'local';
   if (deliver === 'origin') return 'Original channel';
   return deliver;
 }
@@ -264,8 +262,7 @@ function initialFormState(routine?: Routine, template?: RoutineTemplate): Routin
     name: routine?.name ?? template?.name ?? '',
     prompt: routine?.prompt ?? template?.prompt ?? '',
     ...schedule,
-    deliveryMode: deliver && deliver !== 'local' ? 'channel' : 'local',
-    deliver: deliver && deliver !== 'local' ? deliver : '',
+    deliver: deliver || 'local',
     model: routine?.model ?? '',
     workdir: routine?.workdir ?? '',
     repeatMode: repeatTimes === 1 ? 'once' : repeatTimes ? 'times' : 'forever',
@@ -285,13 +282,9 @@ function routineInputFromForm(form: RoutineFormState, previous?: Routine): Routi
     name: form.name.trim(),
     prompt: form.prompt.trim(),
     schedule,
+    deliver: form.deliver.trim() || 'local',
   };
 
-  if (form.deliveryMode === 'channel' && form.deliver.trim()) {
-    input.deliver = form.deliver.trim();
-  } else if (previous?.deliver && previous.deliver !== 'local') {
-    input.deliver = 'local';
-  }
   if (form.model.trim()) input.model = form.model.trim();
   else if (previous?.model) input.model = null;
   if (form.workdir.trim()) input.workdir = form.workdir.trim();
@@ -307,7 +300,7 @@ function routineInputFromForm(form: RoutineFormState, previous?: Routine): Routi
   if (input.name !== previous.name) updates.name = input.name;
   if (input.prompt !== (previous.prompt ?? '')) updates.prompt = input.prompt;
   if (input.schedule !== previousSchedule) updates.schedule = input.schedule;
-  if ('deliver' in input) updates.deliver = input.deliver;
+  if (input.deliver !== (previous.deliver?.trim() || 'local')) updates.deliver = input.deliver;
   if ('model' in input) updates.model = input.model;
   if ('workdir' in input) updates.workdir = input.workdir;
   if (repeat !== previousRepeat) updates.repeat = repeat;
@@ -642,12 +635,14 @@ function TextInput({
   onChange,
   placeholder,
   mono,
+  autoFocus,
   type = 'text',
 }: {
   value: string;
   onChange: (value: string) => void;
   placeholder?: string;
   mono?: boolean;
+  autoFocus?: boolean;
   type?: string;
 }) {
   return (
@@ -656,6 +651,7 @@ function TextInput({
       value={value}
       onChange={(event) => onChange(event.target.value)}
       placeholder={placeholder}
+      autoFocus={autoFocus}
       className={`mt-1 h-9 w-full rounded-md border border-zinc-200 bg-white px-2.5 text-sm text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 ${mono ? 'font-mono' : ''}`}
     />
   );
@@ -749,26 +745,27 @@ function RoutineEditorPage({
       )}
 
       <div className="grid min-h-[640px] grid-cols-1 lg:h-[calc(100vh-9.5rem)] lg:min-h-[560px] lg:grid-cols-[minmax(0,1fr)_360px] lg:overflow-hidden">
-        <div className="flex min-w-0 flex-col border-b border-zinc-200 p-5 lg:min-h-0 lg:border-b-0 lg:border-r dark:border-zinc-800">
-          {!isEdit && (
-            <input
+        <div className="flex min-w-0 flex-col gap-4 border-b border-zinc-200 p-5 lg:min-h-0 lg:border-b-0 lg:border-r dark:border-zinc-800">
+          <FieldLabel label="Name">
+            <TextInput
               value={form.name}
-              onChange={(event) => patch({ name: event.target.value })}
-              placeholder="Routine name"
-              autoFocus
-              className="w-full border-0 bg-transparent text-2xl font-semibold text-zinc-900 placeholder:text-zinc-300 focus:outline-none dark:text-zinc-100 dark:placeholder:text-zinc-700"
+              onChange={(name) => patch({ name })}
+              placeholder="Weekly digest"
+              autoFocus={!isEdit}
             />
-          )}
-          <div className={`${isEdit ? '' : 'mt-5'} flex min-h-0 flex-1`}>
+          </FieldLabel>
+
+          <label className="flex min-h-0 flex-1 flex-col text-xs font-medium text-zinc-500 dark:text-zinc-400">
+            Instructions
             <textarea
               value={form.prompt}
               onChange={(event) => patch({ prompt: event.target.value })}
               autoFocus={isEdit}
               rows={24}
               placeholder="# Goal&#10;Describe exactly what Hermes should do on every run."
-              className="min-h-[520px] w-full flex-1 resize-y rounded-lg border border-zinc-200 bg-white px-3 py-2.5 font-mono text-sm leading-6 text-zinc-900 focus:border-zinc-400 focus:outline-none lg:min-h-0 lg:resize-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
+              className="mt-1 min-h-[480px] w-full flex-1 resize-y rounded-lg border border-zinc-200 bg-white px-3 py-2.5 font-mono text-sm leading-6 text-zinc-900 placeholder:text-zinc-400 focus:border-zinc-400 focus:outline-none lg:min-h-0 lg:resize-none dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-100"
             />
-          </div>
+          </label>
         </div>
 
         <aside className="space-y-5 p-5 lg:min-h-0 lg:overflow-y-auto">
@@ -853,6 +850,25 @@ function RoutineEditorPage({
           </section>
 
           <section className="border-t border-zinc-200 pt-5 dark:border-zinc-800">
+            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Output</h3>
+            <div className="mt-3">
+              <label className="block text-xs font-medium text-zinc-500 dark:text-zinc-400">
+                Delivery target
+                <TextInput
+                  mono
+                  value={form.deliver}
+                  onChange={(deliver) => patch({ deliver })}
+                  placeholder="local, origin, slack:#eng, telegram:123, discord:#eng"
+                />
+              </label>
+              <a href={HERMES_DELIVERY_DOCS} target="_blank" rel="noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">
+                Delivery targets
+                <ExternalLink size={12} />
+              </a>
+            </div>
+          </section>
+
+          <section className="border-t border-zinc-200 pt-5 dark:border-zinc-800">
             <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Model</h3>
             <div className="mt-3">
               <ModelPicker
@@ -865,50 +881,10 @@ function RoutineEditorPage({
             </div>
           </section>
 
-          <section className="border-t border-zinc-200 pt-5 dark:border-zinc-800">
-            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Output</h3>
-            <div role="radiogroup" aria-label="Output destination" className="mt-3 inline-flex h-9 w-full overflow-hidden rounded-md border border-zinc-200 text-sm dark:border-zinc-700">
-              {([
-                { value: 'local' as DeliveryMode, label: 'Save here' },
-                { value: 'channel' as DeliveryMode, label: 'Send to channel' },
-              ]).map((option, index) => {
-                const selected = form.deliveryMode === option.value;
-                return (
-                  <button
-                    key={option.value}
-                    type="button"
-                    role="radio"
-                    aria-checked={selected}
-                    onClick={() => patch({ deliveryMode: option.value })}
-                    className={`flex-1 px-3 ${index ? 'border-l border-zinc-200 dark:border-zinc-700' : ''} ${
-                      selected
-                        ? 'bg-zinc-100 font-medium text-zinc-900 dark:bg-zinc-800 dark:text-zinc-100'
-                        : 'text-zinc-500 hover:bg-zinc-50 dark:text-zinc-400 dark:hover:bg-zinc-800'
-                    }`}
-                  >
-                    {option.label}
-                  </button>
-                );
-              })}
-            </div>
-            {form.deliveryMode === 'channel' && (
-              <div className="mt-3">
-                <TextInput
-                  mono
-                  value={form.deliver}
-                  onChange={(deliver) => patch({ deliver })}
-                  placeholder="slack:#eng, telegram:123, discord:#eng"
-                />
-                <a href={HERMES_DELIVERY_DOCS} target="_blank" rel="noreferrer" className="mt-1.5 inline-flex items-center gap-1 text-xs text-zinc-500 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100">
-                  Delivery targets
-                  <ExternalLink size={12} />
-                </a>
-              </div>
-            )}
-          </section>
-
-          <section className="border-t border-zinc-200 pt-5 dark:border-zinc-800">
-            <h3 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Advanced</h3>
+          <details className="border-t border-zinc-200 pt-5 dark:border-zinc-800">
+            <summary className="cursor-pointer list-none text-sm font-semibold text-zinc-900 outline-none focus-visible:ring-2 focus-visible:ring-zinc-300 dark:text-zinc-100 dark:focus-visible:ring-zinc-700">
+              Advanced
+            </summary>
             <div className="mt-3 space-y-3">
               <FieldLabel label="Workdir">
                 <TextInput mono value={form.workdir} onChange={(workdir) => patch({ workdir })} placeholder="~/.minions/workspace" />
@@ -931,7 +907,7 @@ function RoutineEditorPage({
                 </FieldLabel>
               )}
             </div>
-          </section>
+          </details>
         </aside>
       </div>
     </form>

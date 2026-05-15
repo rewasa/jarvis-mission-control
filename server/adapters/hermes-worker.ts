@@ -9,8 +9,6 @@ import type {
   AgentModelsResponse,
   Routine,
   RoutineInput,
-  RoutineRun,
-  RoutineRunContent,
   SessionMetadata,
   TaskMessage,
 } from '../../shared/types.js';
@@ -550,23 +548,6 @@ export class HermesWorkerAdapter implements AgentAdapter {
       ...updates,
     });
     return result.job;
-  }
-
-  async getRoutineRuns(jobId: string, limit = 20): Promise<RoutineRun[]> {
-    const result = await this.client.request<{ runs: RoutineRun[] }>({
-      type: 'routines.jobs.runs',
-      jobId,
-      limit,
-    });
-    return result.runs;
-  }
-
-  async getRoutineRunContent(jobId: string, runId: string): Promise<RoutineRunContent> {
-    return this.client.request<RoutineRunContent>({
-      type: 'routines.jobs.run.content',
-      jobId,
-      runId,
-    });
   }
 
   async pauseRoutine(jobId: string, reason?: string): Promise<Routine | null> {

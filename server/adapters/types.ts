@@ -3,8 +3,6 @@ import type {
   ContextUsage,
   Routine,
   RoutineInput,
-  RoutineRun,
-  RoutineRunContent,
   SessionMetadata,
   TaskMessage,
 } from '../../shared/types.js';
@@ -67,10 +65,6 @@ export interface AgentAdapter {
   createRoutine(input: RoutineInput): Promise<Routine>;
 
   updateRoutine(jobId: string, updates: Partial<RoutineInput>): Promise<Routine | null>;
-
-  getRoutineRuns(jobId: string, limit?: number): Promise<RoutineRun[]>;
-
-  getRoutineRunContent(jobId: string, runId: string): Promise<RoutineRunContent>;
 
   pauseRoutine(jobId: string, reason?: string): Promise<Routine | null>;
 

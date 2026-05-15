@@ -35,8 +35,6 @@ from hermes_sessions import (
 from hermes_routines import (
     create_routine,
     get_routine,
-    get_routine_run_content,
-    list_routine_runs,
     list_routines,
     pause_routine,
     remove_routine,
@@ -1184,10 +1182,6 @@ def _handle_request(request: dict[str, Any]) -> None:
             _result(request_id, create_routine(request))
         elif request_type == "routines.jobs.update":
             _result(request_id, update_routine(request))
-        elif request_type == "routines.jobs.runs":
-            _result(request_id, list_routine_runs(request.get("jobId"), request.get("limit", 20)))
-        elif request_type == "routines.jobs.run.content":
-            _result(request_id, get_routine_run_content(request.get("jobId"), request.get("runId")))
         elif request_type == "routines.jobs.pause":
             _result(request_id, pause_routine(request.get("jobId"), request.get("reason")))
         elif request_type == "routines.jobs.resume":

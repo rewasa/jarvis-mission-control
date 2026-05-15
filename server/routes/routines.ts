@@ -2,6 +2,7 @@ import { Router, type Response } from 'express';
 import { errorCode, isRecord, toErrorMessage } from '../errors.js';
 import type { Routine, RoutineInput } from '../../shared/types.js';
 import type { HermesWorkerAdapter } from '../adapters/hermes-worker.js';
+import { listRoutineRuns, getRoutineRunContent } from '../routines/runs.js';
 
 const ROUTINE_INPUT_FIELDS = [
   'name',
@@ -101,24 +102,16 @@ export function createRoutinesRouter(adapter: HermesWorkerAdapter): Router {
   });
 
   router.get('/jobs/:jobId/runs', async (req, res) => {
-    try {
-      const rawLimit = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
-      const limit = rawLimit ? Number.parseInt(String(rawLimit), 10) : 20;
-      const runs = await adapter.getRoutineRuns(req.params.jobId, Number.isFinite(limit) ? limit : 20);
-      res.json({ runs });
-    } catch (error) {
-      res.status(503).json({ error: toErrorMessage(error, 'Hermes routines worker unavailable') });
-    }
+    const rawLimit = Array.isArray(req.query.limit) ? req.query.limit[0] : req.query.limit;
+    const limit = rawLimit ? Number.parseInt(String(rawLimit), 10) : 20;
+    const runs = await listRoutineRuns(req.params.jobId, Number.isFinite(limit) ? limit : 20);
+    res.json({ runs });
   });
 
   router.get('/jobs/:jobId/runs/:runId/content', async (req, res) => {
-    try {
-      const content = await adapter.getRoutineRunContent(req.params.jobId, req.params.runId);
-      res.json({ content });
-    } catch (error) {
-      const status = workerStatus(error);
-      res.status(status).json({ error: toErrorMessage(error, 'Hermes routines worker unavailable') });
-    }
+    const content = await getRoutineRunContent(req.params.jobId, req.params.runId);
+    if (!content) return res.status(404).json({ error: 'Routine run output not found' });
+    res.json({ content });
   });
 
   async function jobActionHandler(
