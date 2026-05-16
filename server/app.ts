@@ -10,7 +10,7 @@ import { filesRouter } from './routes/files.js';
 import { HermesWorkerAdapter } from './adapters/hermes-worker.js';
 import { initSSE, addClient, sendEvent } from './events.js';
 import { getRunStatuses } from './live-chat.js';
-import { appVersion } from './version.js';
+import { getAppVersion } from './version.js';
 
 const app = express();
 
@@ -24,7 +24,7 @@ app.get('/api/health', async (_req, res) => {
 });
 
 app.get('/api/version', (_req, res) => {
-  res.json(appVersion);
+  res.json(getAppVersion());
 });
 
 app.get('/api/events', (req, res) => {

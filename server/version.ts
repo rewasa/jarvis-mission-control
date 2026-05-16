@@ -32,4 +32,6 @@ function readAppVersion(): AppVersion {
   return FALLBACK_VERSION;
 }
 
-export const appVersion = readAppVersion();
+export function getAppVersion(): AppVersion {
+  return readAppVersion();
+}
