@@ -55,7 +55,7 @@ chatRouter.get('/:id/session', async (req, res) => {
 });
 
 const DONE_SNAPSHOT_TTL_MS = 30_000;
-const ERROR_SNAPSHOT_TTL_MS = 5 * 60_000;
+const ERROR_SNAPSHOT_TTL_MS = 24 * 60 * 60_000;
 
 async function judgeTaskCompletion(task: Task, responseText: string, responseAt: number): Promise<void> {
   if (!responseText.trim() || task.status !== 'in_progress') return;
@@ -183,7 +183,7 @@ chatRouter.post('/:id/messages', async (req, res) => {
   broadcastLive(runTask.id, { type: 'snapshot', run });
   void consumeChatRun(runTask, sessionId, content, run.runId);
 
-  res.status(202).json({ runId: run.runId, run });
+  res.status(202).json({ runId: run.runId });
 });
 
 chatRouter.get('/:id/live', (req, res) => {

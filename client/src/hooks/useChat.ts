@@ -240,7 +240,7 @@ export function useChat() {
     if (taskIdRef.current && taskIdRef.current !== run.taskId) return;
     taskIdRef.current = run.taskId;
 
-    if (run.status === 'done' && run.runId === lastCommittedRunIdRef.current) {
+    if (run.runId === lastCommittedRunIdRef.current) {
       if (liveRunRef.current?.runId === run.runId) liveRunRef.current = null;
       publishState();
       return;
@@ -400,14 +400,10 @@ export function useChat() {
         signal: abort.signal,
       });
 
-      const body = await res.json().catch(() => ({})) as { run?: LiveChatRun; error?: string };
-
       if (!res.ok) {
+        const body = await res.json().catch(() => ({})) as { error?: string };
         if (res.status !== 409) appendLocalSendError(content, body.error || `HTTP ${res.status}`);
-        return;
       }
-
-      if (body.run) applySnapshot(body.run);
     } catch (err) {
       if ((err as Error).name !== 'AbortError') {
         appendLocalSendError(content, toErrorMessage(err, 'Failed to send message.'));
@@ -415,7 +411,7 @@ export function useChat() {
     } finally {
       if (postAbortRef.current === abort) postAbortRef.current = null;
     }
-  }, [appendLocalSendError, applySnapshot, openLiveSubscription]);
+  }, [appendLocalSendError, openLiveSubscription]);
 
   useEffect(() => () => {
     teardown();

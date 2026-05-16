@@ -70,6 +70,7 @@ export function FileBrowserPage() {
   const fileUploadInputRef = useRef<HTMLInputElement>(null);
   const folderUploadInputRef = useRef<HTMLInputElement>(null);
   const inlineNameInputRef = useRef<HTMLInputElement>(null);
+  const fileListScrollTopRef = useRef(0);
   const [directory, setDirectory] = useState<FileListResponse | null>(null);
   const [pathInput, setPathInput] = useState(DEFAULT_FILE_BROWSER_PATH);
   const [selectedEntry, setSelectedEntry] = useState<FileEntry | null>(null);
@@ -182,6 +183,7 @@ export function FileBrowserPage() {
       setSelectedEntry(null);
       setInlineName(null);
       setContextMenu(null);
+      fileListScrollTopRef.current = 0;
 
       if (previousPath && previousPath !== nextDirectory.path) {
         if (mode === 'push') {
@@ -629,6 +631,10 @@ export function FileBrowserPage() {
               inlineNameInputRef={inlineNameInputRef}
               loading={loadingDirectory}
               statusText={statusText}
+              initialScrollTop={fileListScrollTopRef.current}
+              onScrollTopChange={(scrollTop) => {
+                fileListScrollTopRef.current = scrollTop;
+              }}
               onSelect={selectEntry}
               onOpen={(entry) => void handleEntryOpen(entry)}
               onEntryContextMenu={openEntryContextMenu}
@@ -756,6 +762,8 @@ function FileListView({
   inlineNameInputRef,
   loading,
   statusText,
+  initialScrollTop,
+  onScrollTopChange,
   onSelect,
   onOpen,
   onEntryContextMenu,
@@ -771,6 +779,8 @@ function FileListView({
   inlineNameInputRef: RefObject<HTMLInputElement | null>;
   loading: boolean;
   statusText: string;
+  initialScrollTop: number;
+  onScrollTopChange: (scrollTop: number) => void;
   onSelect: (entry: FileEntry) => void;
   onOpen: (entry: FileEntry) => void;
   onEntryContextMenu: (event: ReactMouseEvent<HTMLElement>, entry: FileEntry) => void;
@@ -780,6 +790,13 @@ function FileListView({
   onInlineNameSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onInlineNameCancel: () => void;
 }) {
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const scrollContainer = scrollContainerRef.current;
+    if (scrollContainer) scrollContainer.scrollTop = initialScrollTop;
+  }, [directory?.path, initialScrollTop]);
+
   return (
     <div className="relative flex min-h-0 flex-1 flex-col bg-white dark:bg-zinc-950">
       <div className={`grid h-8 shrink-0 ${FILE_LIST_GRID} items-center gap-4 border-b border-zinc-200 bg-zinc-50 px-4 text-[11px] font-bold uppercase tracking-wide text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-500`}>
@@ -790,8 +807,10 @@ function FileListView({
       </div>
 
       <div
+        ref={scrollContainerRef}
         className="min-h-0 flex-1 overflow-auto outline-none"
         tabIndex={0}
+        onScroll={(event) => onScrollTopChange(event.currentTarget.scrollTop)}
         onKeyDown={onKeyDown}
         onContextMenu={onEmptyContextMenu}
       >
@@ -997,19 +1016,20 @@ function EditorView({
         <div className="flex min-w-0 items-center gap-3">
           <button
             type="button"
+            aria-label="Close file"
             onClick={onBack}
-            title="Back to files"
-            className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 text-zinc-500 transition-colors hover:bg-zinc-50 hover:text-zinc-900 dark:border-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
+            title="Close file"
+            className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-lg text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-950 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100"
           >
-            <ChevronLeft size={16} />
+            <X size={18} />
           </button>
           <div className="min-w-0">
-            <h2 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            <h2
+              title={file.displayPath}
+              className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100"
+            >
               {file.name}
             </h2>
-            <p className="mt-0.5 truncate font-mono text-xs text-zinc-500 dark:text-zinc-500">
-              {file.displayPath}
-            </p>
           </div>
         </div>
         <div className="flex shrink-0 items-center gap-2">
