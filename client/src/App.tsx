@@ -16,9 +16,9 @@ function AppShell() {
   useTheme();
 
   return (
-    <div className="h-screen flex overflow-hidden bg-sidebar dark:bg-zinc-950">
+    <div className="flex h-dvh overflow-hidden bg-surface dark:bg-zinc-900 sm:h-screen sm:bg-sidebar dark:sm:bg-zinc-950">
       <Sidebar />
-      <main className="m-2 ml-0 flex-1 flex flex-col min-w-0 overflow-hidden rounded-xl border border-zinc-200 bg-surface shadow-sm dark:border-zinc-800 dark:bg-zinc-900">
+      <main className="flex flex-1 flex-col min-w-0 overflow-hidden bg-surface pb-[calc(3.75rem_+_env(safe-area-inset-bottom))] dark:bg-zinc-900 sm:m-2 sm:ml-0 sm:rounded-xl sm:border sm:border-zinc-200 sm:pb-0 sm:shadow-sm sm:dark:border-zinc-800">
         <HeaderProvider>
           <Header />
           <Routes>

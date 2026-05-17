@@ -164,7 +164,7 @@ chatRouter.post('/:id/messages', async (req, res) => {
       taskUpdates.reasoning_effort = taskFields.reasoning_effort;
     }
   }
-  if (task.status === 'in_review') {
+  if (task.status === 'in_review' || task.status === 'done') {
     taskUpdates.status = 'in_progress';
   }
 

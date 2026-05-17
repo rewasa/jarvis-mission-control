@@ -135,7 +135,7 @@ export function TaskDetailPage() {
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="w-full px-4 sm:px-6 pt-7 pb-2">
+      <div className="w-full px-3 pt-4 pb-2 sm:px-6 sm:pt-7">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div className="min-w-0 flex-1">
             <div className="-ml-2 relative w-full rounded-md px-2 py-1 pr-10 transition-colors hover:bg-zinc-100/80 focus-within:bg-white focus-within:ring-1 focus-within:ring-zinc-200 dark:hover:bg-zinc-800/80 dark:focus-within:bg-zinc-900 dark:focus-within:ring-zinc-700">
@@ -159,13 +159,13 @@ export function TaskDetailPage() {
                   }}
                   aria-label="Task title"
                   placeholder="Name this task"
-                  className={`block w-full cursor-text truncate bg-transparent p-0 text-xl font-semibold leading-8 text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500 ${
+                  className={`block w-full cursor-text truncate bg-transparent p-0 text-lg font-semibold leading-7 text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500 sm:text-xl sm:leading-8 ${
                     titleAnimation.isAnimating ? 'rename-title-input-hidden' : ''
                   }`}
                 />
                 <RenameReveal
                   animation={titleAnimation}
-                  className="text-xl font-semibold leading-8 text-zinc-900 dark:text-zinc-100"
+                  className="text-lg font-semibold leading-7 text-zinc-900 dark:text-zinc-100 sm:text-xl sm:leading-8"
                 />
               </div>
               <button

@@ -58,14 +58,16 @@ export function Sidebar() {
     return location.pathname === path;
   };
 
+  const desktopCollapsed = collapsed;
+
   return (
     <aside
-      className={`shrink-0 bg-sidebar dark:bg-zinc-950 flex flex-col transition-[width] duration-200 ease-in-out ${
-        collapsed ? 'w-16' : 'w-56'
+      className={`fixed inset-x-0 bottom-0 z-50 flex h-[calc(3.75rem_+_env(safe-area-inset-bottom))] shrink-0 flex-col justify-end border-t border-zinc-200 bg-white/95 pb-[env(safe-area-inset-bottom)] shadow-[0_-1px_12px_rgba(0,0,0,0.06)] backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/95 sm:relative sm:inset-auto sm:z-auto sm:h-auto sm:justify-start sm:border-t-0 sm:bg-sidebar sm:pb-0 sm:shadow-none sm:backdrop-blur-none dark:sm:bg-zinc-950 sm:transition-[width] sm:duration-200 sm:ease-in-out ${
+        desktopCollapsed ? 'sm:w-16' : 'sm:w-56'
       }`}
     >
-      <div className="flex items-center justify-center py-4 px-2">
-        {collapsed ? (
+      <div className="hidden items-center justify-center px-2 py-4 sm:flex">
+        {desktopCollapsed ? (
           <button
             onClick={toggleSidebar}
             className="text-zinc-400 hover:text-zinc-600 dark:hover:text-zinc-300 transition-colors p-1.5 rounded-lg hover:bg-surface dark:hover:bg-zinc-800"
@@ -89,13 +91,19 @@ export function Sidebar() {
         )}
       </div>
 
-      <nav className={`space-y-1 ${collapsed ? 'px-2' : 'px-3'}`}>
+      <nav
+        aria-label="Primary"
+        className={`flex h-[3.75rem] items-center justify-around gap-1 px-2 sm:block sm:h-auto sm:space-y-1 ${
+          desktopCollapsed ? 'sm:px-2' : 'sm:px-3'
+        }`}
+      >
         <SidebarLink
           icon={<SquarePen size={18} />}
           label="New Task"
+          mobileLabel="New"
           to="/tasks/new"
           active={isActive('/tasks/new')}
-          collapsed={collapsed}
+          collapsed={desktopCollapsed}
           shortcut={isMac ? '⇧⌘O' : 'Ctrl+⇧+O'}
         />
         <SidebarLink
@@ -103,7 +111,7 @@ export function Sidebar() {
           label="Tasks"
           to="/"
           active={isActive('/')}
-          collapsed={collapsed}
+          collapsed={desktopCollapsed}
           shortcut={['G', 'T']}
         />
         <SidebarLink
@@ -111,7 +119,7 @@ export function Sidebar() {
           label="Files"
           to="/files"
           active={isActive('/files')}
-          collapsed={collapsed}
+          collapsed={desktopCollapsed}
           shortcut={['G', 'F']}
         />
         <SidebarLink
@@ -119,21 +127,21 @@ export function Sidebar() {
           label="Routines"
           to="/routines"
           active={isActive('/routines')}
-          collapsed={collapsed}
+          collapsed={desktopCollapsed}
         />
         <SidebarLink
           icon={<Sparkles size={18} />}
           label="Skills"
           to="/skills"
           active={isActive('/skills')}
-          collapsed={collapsed}
+          collapsed={desktopCollapsed}
         />
         <SidebarLink
           icon={<Settings size={18} />}
           label="Settings"
           to="/settings"
           active={isActive('/settings')}
-          collapsed={collapsed}
+          collapsed={desktopCollapsed}
         />
       </nav>
 
@@ -144,6 +152,7 @@ export function Sidebar() {
 function SidebarLink({
   icon,
   label,
+  mobileLabel,
   to,
   active,
   collapsed,
@@ -151,6 +160,7 @@ function SidebarLink({
 }: {
   icon: React.ReactNode;
   label: string;
+  mobileLabel?: string;
   to: string;
   active: boolean;
   collapsed: boolean;
@@ -159,26 +169,29 @@ function SidebarLink({
   return (
     <Link
       to={to}
-      title={collapsed ? (shortcut ? `${label} (${Array.isArray(shortcut) ? shortcut.join(' then ') : shortcut})` : label) : undefined}
-      className={`group w-full flex items-center ${collapsed ? 'justify-center' : 'gap-3'} px-3 py-2 text-sm font-medium rounded-lg transition-colors ${
+      title={shortcut ? `${label} (${Array.isArray(shortcut) ? shortcut.join(' then ') : shortcut})` : label}
+      className={`group flex min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-lg px-1.5 py-1.5 text-[10px] font-medium leading-none transition-colors sm:w-full sm:flex-row sm:px-3 sm:py-2 sm:text-sm sm:leading-normal ${
+        collapsed ? 'sm:justify-center' : 'sm:justify-start sm:gap-3'
+      } ${
         active
-          ? 'bg-surface dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100 shadow-sm'
-          : 'text-zinc-700 dark:text-zinc-300 hover:bg-surface dark:hover:bg-zinc-800'
+          ? 'bg-zinc-100 text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-100 sm:bg-surface'
+          : 'text-zinc-600 hover:bg-zinc-100 hover:text-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100 sm:text-zinc-700 sm:dark:text-zinc-300 sm:hover:bg-surface'
       }`}
     >
       <span className={active ? 'text-zinc-900 dark:text-zinc-100' : 'text-zinc-500 dark:text-zinc-400'}>
         {icon}
       </span>
-      {!collapsed && <span className="truncate">{label}</span>}
+      <span className="block max-w-full truncate sm:hidden">{mobileLabel ?? label}</span>
+      {!collapsed && <span className="hidden truncate sm:block">{label}</span>}
       {!collapsed && shortcut && (
         Array.isArray(shortcut) ? (
-          <span className="ml-auto flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          <span className="ml-auto hidden items-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 sm:flex">
             <Kbd>{shortcut[0]}</Kbd>
             <span className="text-[10px] text-zinc-400 dark:text-zinc-500">then</span>
             <Kbd>{shortcut[1]}</Kbd>
           </span>
         ) : (
-          <span className="ml-auto text-xs text-zinc-400 dark:text-zinc-500 opacity-0 group-hover:opacity-100 transition-opacity tracking-widest">
+          <span className="ml-auto hidden text-xs tracking-widest text-zinc-400 opacity-0 transition-opacity group-hover:opacity-100 dark:text-zinc-500 sm:block">
             {shortcut}
           </span>
         )

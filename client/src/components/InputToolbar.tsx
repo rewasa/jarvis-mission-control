@@ -101,6 +101,12 @@ function matchesAllTerms(searchable: string, terms: string[]): boolean {
   return terms.every((term) => lower.includes(term));
 }
 
+function compactControlLabel(label: string): string {
+  if (label.startsWith('Inherit: ')) return label.slice('Inherit: '.length);
+  if (label === 'Inherit default') return 'Default';
+  return label;
+}
+
 interface ToolbarSelectOption {
   value: string;
   label: string;
@@ -145,6 +151,7 @@ function ToolbarSelect({
 
   const selectedIndex = Math.max(0, options.findIndex((option) => option.value === value));
   const selectedOption = options[selectedIndex] ?? options[0];
+  const selectedLabel = selectedOption?.label ?? 'Select';
   const filteredOptions = useMemo(() => {
     if (!searchable) return options;
 
@@ -293,8 +300,11 @@ function ToolbarSelect({
         className="inline-flex h-9 max-w-full items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-600 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700/70"
       >
         <Icon size={12} className="shrink-0" />
-        <span className={`min-w-0 truncate ${labelMaxWidthClass}`}>
-          {selectedOption?.label ?? 'Select'}
+        <span className="min-w-0 max-w-[4rem] truncate sm:hidden">
+          {compactControlLabel(selectedLabel)}
+        </span>
+        <span className={`hidden min-w-0 truncate sm:block ${labelMaxWidthClass}`}>
+          {selectedLabel}
         </span>
         <ChevronDown
           size={13}
@@ -601,6 +611,7 @@ export function ModelPicker({
     if (!showInheritOption) return 'Select model';
     return defaultModel ? `Inherit: ${defaultModel}` : 'Inherit default';
   })();
+  const compactSelectedLabel = compactControlLabel(selectedLabel);
 
   const updatePosition = useCallback(() => {
     const trigger = triggerRef.current;
@@ -776,7 +787,10 @@ export function ModelPicker({
         className="inline-flex h-9 max-w-full items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2.5 text-xs font-medium text-zinc-600 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700/70"
       >
         <Sparkles size={12} className="shrink-0" />
-        <span className="min-w-0 max-w-[13rem] truncate sm:max-w-[18rem]">
+        <span className="min-w-0 max-w-[5.75rem] truncate sm:hidden">
+          {compactSelectedLabel}
+        </span>
+        <span className="hidden min-w-0 max-w-[18rem] truncate sm:block">
           {selectedLabel}
         </span>
         <ChevronDown

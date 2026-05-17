@@ -118,7 +118,7 @@ export function Board() {
       onDragStart={handleDragStart}
       onDragEnd={handleDragEnd}
     >
-      <div className="flex gap-6 p-6 overflow-x-auto flex-1 min-h-0">
+      <div className="flex flex-1 gap-4 overflow-x-auto p-3 min-h-0 sm:gap-6 sm:p-6">
         {TASK_STATUSES.map((status, index) => (
           <Column
             key={status}

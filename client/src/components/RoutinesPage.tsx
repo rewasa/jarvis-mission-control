@@ -316,7 +316,7 @@ function sourcePathFromState(state: unknown): string | null {
 function PageShell({ children, fitted = false }: { children: ReactNode; fitted?: boolean }) {
   return (
     <div className={`flex-1 min-h-0 ${fitted ? 'overflow-y-auto lg:overflow-hidden' : 'overflow-y-auto'}`}>
-      <div className={`mx-auto max-w-7xl px-6 py-5 ${fitted ? 'lg:h-full' : ''}`}>
+      <div className={`mx-auto max-w-7xl px-3 py-3 sm:px-6 sm:py-5 ${fitted ? 'lg:h-full' : ''}`}>
         <div className={`overflow-hidden rounded-xl border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950 ${fitted ? 'lg:flex lg:h-full lg:min-h-0 lg:flex-col' : ''}`}>
           {children}
         </div>
@@ -528,20 +528,86 @@ function RoutinesList({
 
   return (
     <>
-      <div className="flex items-center gap-3 border-b border-zinc-200 px-5 py-3 dark:border-zinc-800">
+      <div className="flex items-center gap-3 border-b border-zinc-200 px-4 py-3 sm:px-5 dark:border-zinc-800">
         <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Routines</h2>
         <span className="text-xs text-zinc-400 dark:text-zinc-500">{routines.length} total</span>
       </div>
 
-      <div className="overflow-x-auto">
-        <table className="w-full min-w-[1120px] table-fixed text-sm">
+      <div className="divide-y divide-zinc-100 dark:divide-zinc-800 lg:hidden">
+        {routines.map((routine) => {
+          const pending = pendingAction?.jobId === routine.id;
+          const description = promptDescription(routine.prompt);
+          const schedule = scheduleSummary(routine);
+          const lastRun = routine.lastRunAt ? relativeTime(routine.lastRunAt) : '-';
+          const nextRun = routine.enabled ? relativeTime(routine.nextRunAt) : '-';
+
+          return (
+            <div
+              key={routine.id}
+              className={`px-4 py-3 transition-colors hover:bg-zinc-50 dark:hover:bg-zinc-800/60 ${
+                routine.enabled ? '' : 'opacity-75'
+              }`}
+            >
+              <button
+                type="button"
+                onClick={() => onOpenRuns(routine)}
+                className="-mx-1 block w-[calc(100%+0.5rem)] rounded-md px-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-zinc-300 dark:focus-visible:ring-zinc-700"
+              >
+                <div className="flex min-w-0 items-start gap-3">
+                  <span className="mt-0.5 inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-zinc-100 text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300">
+                    <FileText size={16} />
+                  </span>
+                  <div className="min-w-0 flex-1">
+                    <div className="flex min-w-0 items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100" title={routine.name}>
+                          {routine.name}
+                        </p>
+                        <p className="mt-0.5 line-clamp-2 text-xs leading-5 text-zinc-500 dark:text-zinc-400" title={description}>
+                          {description}
+                        </p>
+                      </div>
+                      <RoutineStatePill enabled={routine.enabled} />
+                    </div>
+
+                    <div className="mt-3 grid grid-cols-2 gap-x-3 gap-y-2 text-xs">
+                      {([
+                        { label: 'Schedule', value: schedule, title: schedule, cls: 'text-zinc-700 dark:text-zinc-300' },
+                        { label: 'Next', value: nextRun },
+                        { label: 'Last', value: lastRun },
+                        { label: 'Status', value: routine.lastStatus ?? 'unknown', cls: routineStatusClass(routine.lastStatus) },
+                      ] as { label: string; value: string; title?: string; cls?: string }[]).map((stat) => (
+                        <div key={stat.label} className="min-w-0">
+                          <p className="font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500">{stat.label}</p>
+                          <p className={`mt-0.5 truncate ${stat.cls ?? 'text-zinc-500 dark:text-zinc-400'}`} title={stat.title}>{stat.value}</p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </button>
+
+              <div className="mt-3 flex items-center justify-end gap-1.5 pl-12">
+                <IconButton title="Edit routine" icon={<Pencil size={15} />} disabled={Boolean(pendingAction)} onClick={() => onEdit(routine)} />
+                <IconButton title="Run now" icon={pending && pendingAction?.action === 'run' ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />} disabled={Boolean(pendingAction)} onClick={() => onRun(routine)} />
+                <IconButton title={routine.enabled ? 'Pause' : 'Resume'} icon={pending && (pendingAction?.action === 'pause' || pendingAction?.action === 'resume') ? <Loader2 size={15} className="animate-spin" /> : routine.enabled ? <Pause size={15} /> : <Play size={15} />} disabled={Boolean(pendingAction)} onClick={() => onToggle(routine)} />
+                <IconButton title="Delete" icon={<Trash2 size={15} />} danger disabled={Boolean(pendingAction)} onClick={() => onDelete(routine)} />
+              </div>
+              <span className="sr-only">Output destination: {deliveryLabel(routine)}</span>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="hidden overflow-x-auto lg:block">
+        <table className="w-full min-w-[980px] table-fixed text-sm">
           <colgroup>
-            <col className="w-[34%]" />
-            <col className="w-[18%]" />
+            <col className="w-[32%]" />
+            <col className="w-[17%]" />
             <col className="w-[12%]" />
             <col className="w-[12%]" />
-            <col className="w-[9%]" />
-            <col className="w-[15%]" />
+            <col className="w-[10%]" />
+            <col className="w-[17%]" />
           </colgroup>
           <thead>
             <tr className="border-b border-zinc-100 text-left text-xs uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">

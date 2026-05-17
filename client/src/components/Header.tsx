@@ -102,7 +102,7 @@ export function Header() {
 
   if (pageHeader) {
     return (
-      <header className="flex min-h-[55px] items-center justify-between gap-4 border-b border-zinc-200 bg-surface px-6 py-3 dark:border-zinc-800 dark:bg-zinc-950">
+      <header className="flex min-h-[49px] items-center justify-between gap-3 border-b border-zinc-200 bg-surface px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-950 sm:min-h-[55px] sm:gap-4 sm:px-6 sm:py-3">
         <HeaderCrumbs crumbs={pageHeader.crumbs} />
         {pageHeader.actions && <div className="flex shrink-0 items-center gap-2">{pageHeader.actions}</div>}
       </header>
@@ -110,7 +110,7 @@ export function Header() {
   }
 
   return (
-    <header className="flex items-center px-6 py-3 border-b border-zinc-200 dark:border-zinc-800 bg-surface dark:bg-zinc-950">
+    <header className="flex items-center border-b border-zinc-200 bg-surface px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-950 sm:px-6 sm:py-3">
       <div className="flex items-center gap-2 min-w-0">
         {showParent && (
           <>

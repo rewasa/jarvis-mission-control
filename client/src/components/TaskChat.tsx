@@ -172,7 +172,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
       <div className="relative flex-1 min-h-0">
         <div
           ref={messagesContainerRef}
-          className="h-full overflow-y-auto px-4 sm:px-6 py-4"
+          className="h-full overflow-y-auto px-3 py-3 sm:px-6 sm:py-4"
         >
           <div className={`${CHAT_COLUMN_CLASS} space-y-3`}>
             {isLoadingMessages ? (
@@ -189,7 +189,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
               if (msg.role === 'user') {
                 return (
                   <div key={msg.id} className="flex justify-end">
-                    <div className="max-w-[85%] rounded-2xl px-4 py-2.5 text-sm whitespace-pre-wrap leading-relaxed bg-zinc-100 dark:bg-zinc-800 text-zinc-900 dark:text-zinc-100">
+                    <div className="max-w-[92%] rounded-2xl bg-zinc-100 px-3.5 py-2.5 text-sm leading-relaxed text-zinc-900 whitespace-pre-wrap dark:bg-zinc-800 dark:text-zinc-100 sm:max-w-[85%] sm:px-4">
                       {msg.content}
                     </div>
                   </div>
@@ -204,7 +204,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
 
               return (
                 <div key={msg.id} className="flex justify-start">
-                  <div className="w-full px-1 sm:px-2">
+                  <div className="w-full sm:px-2">
                     {thinkingToShow && (
                       <ThinkingBlock content={thinkingToShow} isLive={isLiveThinking} />
                     )}
@@ -243,8 +243,8 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
         </div>
       </div>
 
-      <div className="px-4 sm:px-6 py-4 border-t border-zinc-100 dark:border-zinc-800">
-        <div className={`${CHAT_COLUMN_CLASS} rounded-2xl border border-zinc-200 dark:border-zinc-700 bg-white dark:bg-zinc-800`}>
+      <div className="border-t border-zinc-100 px-3 py-3 dark:border-zinc-800 sm:px-6 sm:py-4">
+        <div className={`${CHAT_COLUMN_CLASS} rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800 sm:rounded-2xl`}>
           <textarea
             ref={inputRef}
             value={input}
@@ -252,9 +252,9 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
             onKeyDown={handleKeyDown}
             placeholder="Message your assistant..."
             rows={2}
-            className="w-full resize-none bg-transparent px-5 pt-3 pb-1 text-sm text-zinc-900 dark:text-zinc-100 placeholder-zinc-400 dark:placeholder-zinc-500 focus:outline-none leading-relaxed"
+            className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-relaxed text-zinc-900 placeholder-zinc-400 focus:outline-none dark:text-zinc-100 dark:placeholder-zinc-500 sm:px-5"
           />
-          <div className="flex items-center justify-between px-4 pb-3">
+          <div className="flex items-end justify-between gap-3 px-3 pb-3 sm:px-4">
             <InputToolbar
               model={model}
               reasoningEffort={reasoningEffort}
