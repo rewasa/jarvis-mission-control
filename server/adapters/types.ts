@@ -1,5 +1,6 @@
 import type {
   AgentRunSettings,
+  CompactResult,
   ContextUsage,
   Routine,
   RoutineInput,
@@ -57,6 +58,16 @@ export interface AgentAdapter {
   ): Promise<{ done: boolean; reason: string }>;
 
   generateTitle(description: string): Promise<{ title: string }>;
+
+  compressSession(
+    sessionId: string,
+    options?: {
+      focusTopic?: string | null;
+      currentTokens?: number | null;
+      systemMessage?: string;
+      settings?: AgentRunSettings;
+    },
+  ): Promise<CompactResult>;
 
   listRoutines(includeDisabled?: boolean): Promise<Routine[]>;
 

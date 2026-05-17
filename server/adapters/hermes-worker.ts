@@ -7,12 +7,13 @@ import { randomUUID } from 'node:crypto';
 import type {
   AgentDefaults,
   AgentModelsResponse,
+  CompactResult,
   Routine,
   RoutineInput,
   SessionMetadata,
   TaskMessage,
 } from '../../shared/types.js';
-import type { AgentAdapter, AgentRunOptions, StreamEvent } from './types.js';
+import type { AgentAdapter, AgentRunOptions, AgentRunSettings, StreamEvent } from './types.js';
 import type { WorkerEvent, WorkerRequest, WorkerResult, WorkerErrorPayload } from './worker-protocol.js';
 import { expandHomePrefix, resolveHermesHome, resolveMinionsWorkspaceDir } from '../paths.js';
 
@@ -601,6 +602,25 @@ export class HermesWorkerAdapter implements AgentAdapter {
     return await this.client.request<{ title: string }>({
       type: 'title.generate',
       description,
+    });
+  }
+
+  async compressSession(
+    sessionId: string,
+    options?: {
+      focusTopic?: string | null;
+      currentTokens?: number | null;
+      systemMessage?: string;
+      settings?: AgentRunSettings;
+    },
+  ): Promise<CompactResult> {
+    return await this.client.request<CompactResult>({
+      type: 'session.compress',
+      sessionId,
+      focusTopic: options?.focusTopic,
+      currentTokens: options?.currentTokens,
+      systemMessage: options?.systemMessage,
+      settings: options?.settings,
     });
   }
 }

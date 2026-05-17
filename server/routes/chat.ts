@@ -17,7 +17,7 @@ import { taskRunSettings, parseRunSettingsBody } from '../agent-settings.js';
 import { TASK_AGENT_SYSTEM_PROMPT } from '../prompts/task-agent.js';
 import { toErrorMessage } from '../errors.js';
 import type { StreamEvent } from '../adapters/types.js';
-import type { ContextUsage, Task } from '../../shared/types.js';
+import type { CompactResult, ContextUsage, Task } from '../../shared/types.js';
 
 export const chatRouter = Router();
 
@@ -184,6 +184,37 @@ chatRouter.post('/:id/messages', async (req, res) => {
   void consumeChatRun(runTask, sessionId, content, run.runId);
 
   res.status(202).json({ runId: run.runId });
+});
+
+chatRouter.post('/:id/compact', async (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  const activeRun = getRunStatus(task.id);
+  if (activeRun?.status === 'streaming') {
+    return res.status(409).json({ error: 'Cannot compact while a message is streaming' });
+  }
+
+  const focusTopic = typeof req.body?.focusTopic === 'string' ? req.body.focusTopic.trim() || null : null;
+  const currentTokens = task.last_context_used_tokens ?? undefined;
+
+  try {
+    const result: CompactResult = await adapter.compressSession(task.id, {
+      focusTopic,
+      currentTokens,
+      systemMessage: TASK_AGENT_SYSTEM_PROMPT,
+      settings: taskRunSettings(task),
+    });
+
+    if (result.context) {
+      const updated = recordAgentResponse(task.id, task.last_agent_response_at ?? Date.now(), result.context);
+      if (updated) broadcast({ type: 'task_updated', task: updated });
+    }
+
+    res.json(result);
+  } catch (error) {
+    res.status(503).json({ error: toErrorMessage(error, 'Compaction failed') });
+  }
 });
 
 chatRouter.get('/:id/live', (req, res) => {

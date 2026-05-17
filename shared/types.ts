@@ -81,6 +81,14 @@ export interface ContextUsage {
   window_tokens: number;
 }
 
+export interface CompactResult {
+  compressed: boolean;
+  sessionId: string;
+  previousMessageCount: number;
+  compressedMessageCount: number;
+  context?: ContextUsage | null;
+}
+
 export interface SessionMetadata {
   id: string;
   input_tokens: number;

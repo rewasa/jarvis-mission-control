@@ -5,7 +5,7 @@ import { MarkdownContent } from './MarkdownContent';
 import { useChat, ToolProgressEvent } from '../hooks/useChat';
 import { useAgentConfig } from '../hooks/useAgentConfig';
 import { handleChatKeyDown } from '../lib/keyboard';
-import type { AgentRunSettings } from '../lib/api';
+import { compactTask, type AgentRunSettings } from '../lib/api';
 
 interface TaskChatProps {
   taskId: string;
@@ -103,6 +103,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   const [input, setInput] = useState('');
   const [loadedTaskId, setLoadedTaskId] = useState<string | null>(null);
   const [messageLoadError, setMessageLoadError] = useState(false);
+  const [isCompacting, setIsCompacting] = useState(false);
   const startupRef = useRef({ taskId, initialMessage, initialSettings });
   if (startupRef.current.taskId !== taskId) {
     startupRef.current = { taskId, initialMessage, initialSettings };
@@ -156,10 +157,21 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
 
   const handleSubmit = useCallback(async () => {
     const text = input.trim();
-    if (!text || isStreaming || configPending) return;
+    if (!text || isStreaming || isCompacting || configPending) return;
     setInput('');
     await sendMessage(taskId, text, { model, reasoningEffort });
-  }, [configPending, input, isStreaming, taskId, sendMessage, model, reasoningEffort]);
+  }, [configPending, input, isCompacting, isStreaming, taskId, sendMessage, model, reasoningEffort]);
+
+  const handleCompact = useCallback(async () => {
+    if (isCompacting) return;
+    setIsCompacting(true);
+    try {
+      await compactTask(taskId);
+      await loadMessages(taskId);
+    } finally {
+      setIsCompacting(false);
+    }
+  }, [isCompacting, taskId, loadMessages]);
 
   const handleKeyDown = useCallback(
     (e: React.KeyboardEvent) => handleChatKeyDown(e, handleSubmit),
@@ -260,9 +272,10 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
             value={input}
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
+            disabled={isCompacting}
             placeholder="Message your assistant..."
             rows={2}
-            className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-relaxed text-zinc-900 placeholder-zinc-400 focus:outline-none dark:text-zinc-100 dark:placeholder-zinc-500 sm:px-5"
+            className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-relaxed text-zinc-900 placeholder-zinc-400 focus:outline-none disabled:opacity-60 dark:text-zinc-100 dark:placeholder-zinc-500 sm:px-5"
           />
           <div className="flex items-end justify-between gap-3 px-3 pb-3 sm:px-4">
             <InputToolbar
@@ -270,15 +283,22 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
               reasoningEffort={reasoningEffort}
               defaults={toolbarDefaults}
               modelGroups={modelGroups}
-              disabled={isStreaming}
+              disabled={isStreaming || isCompacting}
               onModelChange={setModel}
               onReasoningEffortChange={setReasoningEffort}
             />
             <div className="flex items-center gap-2">
-              {context && <ContextRing context={context} />}
+              {context && (
+                <ContextRing
+                  context={context}
+                  onCompact={handleCompact}
+                  compacting={isCompacting}
+                  disabled={isStreaming || configPending}
+                />
+              )}
               <button
                 onClick={handleSubmit}
-                disabled={!input.trim() || isStreaming || configPending}
+                disabled={!input.trim() || isStreaming || isCompacting || configPending}
                 className="p-2 rounded-full bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 disabled:opacity-30 hover:bg-zinc-700 dark:hover:bg-zinc-300 transition-colors"
               >
                 <ArrowUp size={14} />

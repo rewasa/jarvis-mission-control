@@ -46,6 +46,15 @@ export type WorkerRequest =
       id: string;
       type: 'title.generate';
       description: string;
+    }
+  | {
+      id: string;
+      type: 'session.compress';
+      sessionId: string;
+      focusTopic?: string | null;
+      currentTokens?: number | null;
+      systemMessage?: string;
+      settings?: AgentRunSettings;
     };
 
 export interface WorkerErrorPayload {
@@ -64,7 +73,14 @@ export type WorkerResult =
   | { messages: TaskMessage[] }
   | { session: SessionMetadata | null }
   | { done: boolean; reason: string }
-  | { title: string };
+  | { title: string }
+  | {
+      compressed: boolean;
+      sessionId: string;
+      previousMessageCount: number;
+      compressedMessageCount: number;
+      context?: ContextUsage | null;
+    };
 
 export type WorkerEvent =
   | { id: string; type: 'result'; data: WorkerResult }

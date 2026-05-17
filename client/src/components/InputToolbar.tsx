@@ -1,10 +1,17 @@
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Search, Sparkles, Zap, type LucideIcon } from 'lucide-react';
+import { Check, ChevronDown, Loader2, Search, Sparkles, Zap, type LucideIcon } from 'lucide-react';
 import { REASONING_EFFORTS, type AgentDefaults, type AgentModelGroup, type ContextUsage, type ReasoningEffort } from '@shared/types';
 import { formatTokenCount } from '../lib/format';
 
-export function ContextRing({ context }: { context: ContextUsage }) {
+interface ContextRingProps {
+  context: ContextUsage;
+  onCompact?: () => Promise<void>;
+  compacting?: boolean;
+  disabled?: boolean;
+}
+
+export function ContextRing({ context, onCompact, compacting = false, disabled }: ContextRingProps) {
   const pct = context.window_tokens > 0
     ? Math.round((context.used_tokens / context.window_tokens) * 100)
     : 0;
@@ -22,9 +29,54 @@ export function ContextRing({ context }: { context: ContextUsage }) {
   else if (pct > 60) colorClass = 'text-amber-500';
   else colorClass = 'text-zinc-400 dark:text-zinc-500';
 
+  const [open, setOpen] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const containerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    setError(null);
+
+    function handlePointerDown(event: MouseEvent) {
+      if (containerRef.current?.contains(event.target as Node)) return;
+      setOpen(false);
+    }
+
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        setOpen(false);
+      }
+    }
+
+    document.addEventListener('mousedown', handlePointerDown, { passive: true });
+    document.addEventListener('keydown', handleKeyDown);
+    return () => {
+      document.removeEventListener('mousedown', handlePointerDown);
+      document.removeEventListener('keydown', handleKeyDown);
+    };
+  }, [open]);
+
+  const handleCompact = useCallback(async () => {
+    if (!onCompact || compacting || disabled) return;
+    setError(null);
+    try {
+      await onCompact();
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Compaction failed');
+    }
+  }, [compacting, disabled, onCompact]);
+
   return (
-    <div className="relative group cursor-default">
-      <div className="relative w-[26px] h-[26px]">
+    <div ref={containerRef} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen((v) => !v)}
+        disabled={disabled}
+        className="relative w-[26px] h-[26px] group cursor-pointer disabled:cursor-default"
+        title={`Context: ${pct}% used`}
+      >
         <svg width={size} height={size} className="-rotate-90">
           <circle
             cx={size / 2}
@@ -54,22 +106,47 @@ export function ContextRing({ context }: { context: ContextUsage }) {
         >
           {pct}
         </span>
-      </div>
+      </button>
 
-      <div className="absolute bottom-full right-0 mb-2.5 z-50 opacity-0 group-hover:opacity-100 pointer-events-none group-hover:pointer-events-auto transition-opacity duration-150">
-        <div className="w-56 p-3 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-lg">
-          <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-1">
-            Context window
-          </p>
-          {exceeded && (
-            <p className="text-xs text-red-500 mb-0.5">{pct}% used (exceeded)</p>
-          )}
-          <div className="space-y-0.5 text-xs text-zinc-500 dark:text-zinc-400 tabular-nums">
-            <p>Context: {formatTokenCount(context.used_tokens)} / {formatTokenCount(context.window_tokens)}</p>
+      {open && (
+        <div className="absolute bottom-full right-0 mb-2.5 z-50">
+          <div className="w-64 p-3 rounded-lg bg-white dark:bg-zinc-800 border border-zinc-200 dark:border-zinc-700 shadow-lg">
+            <p className="text-xs font-semibold text-zinc-900 dark:text-zinc-100 mb-1">
+              Context window
+            </p>
+            {exceeded && (
+              <p className="text-xs text-red-500 mb-0.5">{pct}% used (exceeded)</p>
+            )}
+            <div className="text-xs text-zinc-500 dark:text-zinc-400 tabular-nums mb-3">
+              <p>Context: {formatTokenCount(context.used_tokens)} / {formatTokenCount(context.window_tokens)}</p>
+            </div>
+
+            {onCompact && (
+              <div className="border-t border-zinc-200 dark:border-zinc-700 pt-2.5">
+                <button
+                  type="button"
+                  onClick={handleCompact}
+                  disabled={disabled || compacting}
+                  className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-md bg-zinc-900 dark:bg-zinc-100 text-white dark:text-zinc-900 hover:bg-zinc-700 dark:hover:bg-zinc-300 disabled:opacity-50 transition-colors"
+                >
+                  {compacting ? (
+                    <>
+                      <Loader2 size={12} className="animate-spin" />
+                      <span>Compacting...</span>
+                    </>
+                  ) : (
+                    <span>Compact conversation</span>
+                  )}
+                </button>
+                {error && (
+                  <p className="mt-1.5 text-[11px] text-red-500">{error}</p>
+                )}
+              </div>
+            )}
           </div>
+          <div className="absolute -bottom-[3px] right-[9px] w-1.5 h-1.5 bg-white dark:bg-zinc-800 border-r border-b border-zinc-200 dark:border-zinc-700 rotate-45" />
         </div>
-        <div className="absolute -bottom-[3px] right-[9px] w-1.5 h-1.5 bg-white dark:bg-zinc-800 border-r border-b border-zinc-200 dark:border-zinc-700 rotate-45" />
-      </div>
+      )}
     </div>
   );
 }

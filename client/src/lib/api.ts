@@ -3,6 +3,7 @@ import type {
   AgentModelsResponse,
   AgentRunSettings,
   AppVersion,
+  CompactResult,
   FileCreateResponse,
   FileCreateType,
   FileDeleteResponse,
@@ -145,6 +146,12 @@ export function fetchTaskAgentSettings(taskId: string) {
   return request<TaskAgentSettings>(`/tasks/${taskId}/agent-settings`);
 }
 
+export function compactTask(taskId: string, focusTopic?: string | null) {
+  return request<CompactResult>(`/tasks/${taskId}/compact`, {
+    method: 'POST',
+    body: JSON.stringify(focusTopic ? { focusTopic } : {}),
+  });
+}
 
 export function fetchRoutines(includeDisabled = true) {
   return request<{ jobs: Routine[] }>(`/routines/jobs?includeDisabled=${includeDisabled ? 'true' : 'false'}`);

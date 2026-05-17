@@ -1225,6 +1225,72 @@ def _submit_background_agent_request(
     ).start()
 
 
+def _run_compress(request: dict[str, Any]) -> dict[str, Any]:
+    """Manually compress a session's conversation history."""
+    session_id = string_or_none(request.get("sessionId"))
+    if not session_id:
+        raise WorkerError("Session ID is required.", code="bad_request")
+
+    focus_topic = string_or_none(request.get("focusTopic"))
+    settings = request.get("settings") if isinstance(request.get("settings"), dict) else {}
+    requested_model = string_or_none(settings.get("model"))
+    requested_effort = _normalize_reasoning(settings.get("reasoningEffort"))
+
+    session_db, live_session_id = open_session(session_id)
+    history = load_agent_history(session_db, live_session_id)
+    if len(history) < 4:
+        raise WorkerError("Conversation too short to compact.", code="compact_skipped")
+
+    agent = _create_agent(
+        session_id=live_session_id,
+        requested_model=requested_model,
+        reasoning_effort=requested_effort,
+    )
+
+    context_compressor = getattr(agent, "context_compressor", None)
+    if not context_compressor:
+        raise WorkerError("Context compression is not available for this model.", code="compact_unavailable")
+
+    has_content_to_compress = getattr(context_compressor, "has_content_to_compress", None)
+    if callable(has_content_to_compress) and not has_content_to_compress(history):
+        raise WorkerError("Conversation has nothing to compact yet.", code="compact_skipped")
+
+    current_tokens = int(request.get("currentTokens") or 0)
+    if not current_tokens:
+        context_length = int(getattr(context_compressor, "context_length", 0) or 0)
+        current_tokens = context_length or 100000
+
+    system_message = string_or_none(request.get("systemMessage")) or ""
+    prev_count = len(history)
+
+    compressed, _ = agent._compress_context(
+        history,
+        system_message,
+        approx_tokens=current_tokens,
+        task_id=live_session_id,
+        focus_topic=focus_topic or None,
+    )
+
+    flush = getattr(agent, "_flush_messages_to_session_db", None)
+    if callable(flush):
+        flush(compressed, conversation_history=[])
+
+    new_session_id = getattr(agent, "session_id", live_session_id)
+    context_window = int(getattr(context_compressor, "context_length", 0) or 0)
+    context_used = int(getattr(context_compressor, "last_prompt_tokens", 0) or 0)
+
+    return {
+        "compressed": True,
+        "sessionId": new_session_id,
+        "previousMessageCount": prev_count,
+        "compressedMessageCount": len(compressed),
+        "context": {
+            "used_tokens": context_used,
+            "window_tokens": context_window,
+        } if context_window > 0 else None,
+    }
+
+
 def _judge_completion(request: dict[str, Any]) -> dict[str, Any]:
     """Evaluate whether the agent's response indicates task completion."""
     task_title = string_or_none(request.get("taskTitle")) or ""
@@ -1375,6 +1441,8 @@ def _handle_request(request: dict[str, Any]) -> None:
             _result(request_id, project_session_metadata(request.get("sessionId")))
         elif request_type == "chat":
             _submit_chat_request(request_id, request)
+        elif request_type == "session.compress":
+            _submit_background_agent_request(request_id, request, name_prefix="compress", handler=_run_compress)
         elif request_type == "judge.completion":
             _submit_background_agent_request(request_id, request, name_prefix="judge", handler=_judge_completion)
         elif request_type == "title.generate":
