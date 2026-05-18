@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useLayoutEffect, useCallback, Fragment } from 'react';
+import { useState, useRef, useEffect, useLayoutEffect, useCallback, useMemo, Fragment } from 'react';
 import { ArrowUp, Loader2, ChevronDown, ChevronRight, Check, Terminal, FileText, FilePenLine, Globe, Code, Wrench, X } from 'lucide-react';
 import { InputToolbar, ContextRing } from './InputToolbar';
 import { MarkdownContent } from './MarkdownContent';
@@ -187,6 +187,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   const [queuedMessage, setQueuedMessage] = useState<QueuedMessage | null>(null);
   const [queuedSendError, setQueuedSendError] = useState<string | null>(null);
   const [autoSendingQueuedId, setAutoSendingQueuedId] = useState<string | null>(null);
+  const [outgoingRevealActive, setOutgoingRevealActive] = useState(false);
   const startupRef = useRef({ taskId, initialMessage, initialSettings });
   if (startupRef.current.taskId !== taskId) {
     startupRef.current = { taskId, initialMessage, initialSettings };
@@ -199,9 +200,11 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   const toolbarDefaults = waitingForTaskSettings ? null : defaults;
   const configPending = waitingForTaskSettings || (!defaults && isLoading);
   const messagesContainerRef = useRef<HTMLDivElement>(null);
+  const latestUserMessageRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const didInitialScrollRef = useRef(false);
   const pendingAutoSendRef = useRef<string | null>(null);
+  const pendingRevealRef = useRef(false);
   const queuedMessageRef = useRef<QueuedMessage | null>(null);
   const runIsStreaming = taskRun?.kind === 'chat' && taskRun.status === 'streaming';
   const isStreaming = liveIsStreaming || runIsStreaming;
@@ -209,6 +212,10 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   const compactionBlocker = isCompacting || compactInFlight;
   const taskBusyForQueue = isStreaming || compactionBlocker;
   const queuedIsSending = autoSendingQueuedId === queuedMessage?.id;
+  const latestUserMessageId = useMemo(
+    () => messages.findLast(m => m.role === 'user')?.id ?? null,
+    [messages],
+  );
 
   useEffect(() => {
     queuedMessageRef.current = queuedMessage;
@@ -224,8 +231,10 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     setQueuedMessage(null);
     setQueuedSendError(null);
     setAutoSendingQueuedId(null);
+    setOutgoingRevealActive(false);
     queuedMessageRef.current = null;
     pendingAutoSendRef.current = null;
+    pendingRevealRef.current = false;
     didInitialScrollRef.current = false;
     loadMessages(taskId)
       .then((loadedMessages) => {
@@ -235,6 +244,8 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
         if (firstMessage) {
           startupRef.current.initialMessage = undefined;
           if (loadedMessages.length === 0) {
+            pendingRevealRef.current = true;
+            setOutgoingRevealActive(true);
             sendMessage(taskId, firstMessage, startupRef.current.initialSettings);
           }
         }
@@ -264,17 +275,41 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     if (container) container.scrollTop = container.scrollHeight;
   }, [compactInFlight, compactDone]);
 
+  useLayoutEffect(() => {
+    if (loadedTaskId !== taskId || !pendingRevealRef.current) return;
+
+    const container = messagesContainerRef.current;
+    const target = latestUserMessageRef.current;
+    if (!container || !target) return;
+
+    const containerRect = container.getBoundingClientRect();
+    const targetRect = target.getBoundingClientRect();
+    const targetTop = container.scrollTop + targetRect.top - containerRect.top - 12;
+    const reduceMotion = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false;
+
+    container.scrollTo({
+      top: Math.max(0, targetTop),
+      behavior: reduceMotion ? 'auto' : 'smooth',
+    });
+
+    pendingRevealRef.current = false;
+  }, [latestUserMessageId, loadedTaskId, taskId]);
+
   const sendQueuedMessage = useCallback(async (message: QueuedMessage) => {
     if (pendingAutoSendRef.current) return;
 
     pendingAutoSendRef.current = message.id;
+    pendingRevealRef.current = true;
     setAutoSendingQueuedId(message.id);
+    setOutgoingRevealActive(true);
     setQueuedSendError(null);
 
     const result = await sendMessage(taskId, message.content, message.settings, { appendLocalError: false });
     if (result.ok) {
       setQueuedMessage((current) => current?.id === message.id ? null : current);
     } else if (queuedMessageRef.current?.id === message.id) {
+      pendingRevealRef.current = false;
+      setOutgoingRevealActive(false);
       setQueuedSendError(result.error);
     }
 
@@ -305,8 +340,14 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     }
 
     setInput('');
+    pendingRevealRef.current = true;
+    setOutgoingRevealActive(true);
     const result = await sendMessage(taskId, text, settings);
-    if (!result.ok && result.conflict) setInput(text);
+    if (!result.ok && result.conflict) {
+      pendingRevealRef.current = false;
+      setOutgoingRevealActive(false);
+      setInput(text);
+    }
   }, [configPending, input, queuedMessage, model, reasoningEffort, taskBusyForQueue, sendMessage, taskId]);
 
   const handleCompact = useCallback(async () => {
@@ -379,10 +420,11 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
               }
 
               if (msg.role === 'user') {
+                const isLatestUserMessage = msg.id === latestUserMessageId;
                 return (
                   <Fragment key={msg.id}>
                     {compactDivider}
-                    <div className="flex justify-end">
+                    <div ref={isLatestUserMessage ? latestUserMessageRef : undefined} className="flex justify-end">
                       <div className="max-w-[92%] rounded-2xl bg-zinc-100 px-3.5 py-2.5 text-sm leading-relaxed text-zinc-900 whitespace-pre-wrap dark:bg-zinc-800 dark:text-zinc-100 sm:max-w-[85%] sm:px-4">
                         {msg.content}
                       </div>
@@ -448,6 +490,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
             {compactDone && compactAfterIndex >= messages.length && (
               <ConversationDivider>Conversation compacted</ConversationDivider>
             )}
+            {outgoingRevealActive && <div aria-hidden="true" className="h-[45vh] sm:h-[52vh]" />}
           </div>
         </div>
       </div>
