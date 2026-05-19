@@ -212,10 +212,12 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   const compactionBlocker = isCompacting || compactInFlight;
   const taskBusyForQueue = isStreaming || compactionBlocker;
   const queuedIsSending = autoSendingQueuedId === queuedMessage?.id;
-  const latestUserMessageId = useMemo(
-    () => messages.findLast(m => m.role === 'user')?.id ?? null,
-    [messages],
-  );
+  const latestUserMessageId = useMemo(() => {
+    for (let i = messages.length - 1; i >= 0; i--) {
+      if (messages[i].role === 'user') return messages[i].id;
+    }
+    return null;
+  }, [messages]);
 
   useEffect(() => {
     queuedMessageRef.current = queuedMessage;
@@ -255,9 +257,12 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
         setMessageLoadError(true);
         setLoadedTaskId(taskId);
       });
-    inputRef.current?.focus();
     return () => { cancelled = true; };
   }, [taskId, loadMessages, sendMessage]);
+
+  useEffect(() => {
+    if (!configPending) inputRef.current?.focus();
+  }, [configPending, taskId]);
 
   useLayoutEffect(() => {
     if (loadedTaskId !== taskId || didInitialScrollRef.current) return;
