@@ -37,10 +37,10 @@ export function formatTokenCount(n: number): string {
 
 export const GOAL_MODE_PLACEHOLDER = 'Describe the goal Hermes should keep working toward...';
 
-export function goalTurnLabel(turnsUsed: number, maxTurns: number): string | null {
+export function goalTurnLabel(turnsUsed: number, maxTurns: number, compact?: boolean): string | null {
   if (maxTurns <= 0) return null;
   const currentTurn = Math.min(Math.max(0, turnsUsed) + 1, maxTurns);
-  return `Turn ${currentTurn} of ${maxTurns}`;
+  return compact ? `${currentTurn}/${maxTurns}` : `Turn ${currentTurn} of ${maxTurns}`;
 }
 
 export function timeAgo(ms: number): string {
