@@ -313,9 +313,6 @@ export interface SkillInstallResult {
   skill: SkillMeta;
   installed: boolean;
   alreadyInstalled?: boolean;
-  hermesExternalDirConfigured: boolean;
-  hermesConfigChanged?: boolean;
-  skillsDir?: string;
 }
 
 export interface ClawHubStats {

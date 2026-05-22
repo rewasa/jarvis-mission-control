@@ -676,7 +676,10 @@ function resolveConfigDir(value: string): string {
   return resolve(resolveHermesHome(), expanded);
 }
 
-async function ensureHermesExternalSkillsDir(): Promise<{ configured: boolean; changed: boolean; path: string }> {
+// Registers MINIONS_HOME/skills as a Hermes `skills.external_dirs` entry so agent
+// runs load installed skills. Idempotent — called once at server boot; installs
+// drop skills into the already-registered dir and need no further config write.
+export async function ensureHermesExternalSkillsDir(): Promise<void> {
   const skillsDir = resolveMinionsSkillsDir();
   const hermesHome = resolveHermesHome();
   const configPath = join(hermesHome, 'config.yaml');
@@ -694,7 +697,7 @@ async function ensureHermesExternalSkillsDir(): Promise<{ configured: boolean; c
       : [];
 
   if (existingDirs.some((dir) => resolveConfigDir(dir) === resolve(skillsDir))) {
-    return { configured: true, changed: false, path: skillsDir };
+    return;
   }
 
   // If `skills:` exists but is not a mapping (a bare `skills:` parses to null, or
@@ -707,7 +710,6 @@ async function ensureHermesExternalSkillsDir(): Promise<{ configured: boolean; c
 
   doc.setIn(['skills', 'external_dirs'], [...existingDirs, displayHomePath(skillsDir)]);
   await writeFile(configPath, doc.toString(), 'utf8');
-  return { configured: true, changed: true, path: skillsDir };
 }
 
 async function writeSkillFiles(destination: string, files: Map<string, Buffer>, sidecar: MinionsSkillSidecar): Promise<void> {
@@ -737,7 +739,6 @@ async function installClawHubSkill(slug: string, requestedVersion: string | unde
   skill: SkillMeta;
   installed: boolean;
   alreadyInstalled: boolean;
-  hermes: { configured: boolean; changed: boolean; path: string };
 }> {
   const skillsRoot = resolveMinionsSkillsDir();
   const destination = resolve(skillsRoot, 'clawhub', slug);
@@ -746,12 +747,10 @@ async function installClawHubSkill(slug: string, requestedVersion: string | unde
 
   const existingSkillFile = join(destination, 'SKILL.md');
   if (!force && await pathExists(existingSkillFile)) {
-    const hermes = await ensureHermesExternalSkillsDir();
     return {
       skill: await readInstalledSkill(existingSkillFile, skillsRoot),
       installed: false,
       alreadyInstalled: true,
-      hermes,
     };
   }
 
@@ -771,17 +770,12 @@ async function installClawHubSkill(slug: string, requestedVersion: string | unde
     installedAt: new Date().toISOString(),
   };
 
-  // Configure Hermes *before* writing the skill, so a config-write failure
-  // (e.g. a read-only ~/.hermes) fails the install cleanly instead of leaving
-  // the files on disk under a "failed" response.
-  const hermes = await ensureHermesExternalSkillsDir();
   await writeSkillFiles(destination, files, sidecar);
 
   return {
     skill: await readInstalledSkill(join(destination, 'SKILL.md'), skillsRoot),
     installed: true,
     alreadyInstalled: false,
-    hermes,
   };
 }
 
@@ -797,7 +791,6 @@ function parseSkillImportRequest(value: unknown, fileCount: number): { relativeP
 async function importLocalSkill(uploadedFiles: Express.Multer.File[], relativePaths: string[]): Promise<{
   skill: SkillMeta;
   imported: boolean;
-  hermes: { configured: boolean; changed: boolean; path: string };
 }> {
   const prepared = await uploadedSkillFilesFromRequest(uploadedFiles, relativePaths);
   const skillContent = prepared.files.get('SKILL.md');
@@ -820,15 +813,11 @@ async function importLocalSkill(uploadedFiles: Express.Multer.File[], relativePa
   };
 
   await mkdir(dirname(destination), { recursive: true });
-  // Configure Hermes before writing files (see installClawHubSkill) so a
-  // config-write failure doesn't leave a half-imported skill on disk.
-  const hermes = await ensureHermesExternalSkillsDir();
   await writeSkillFiles(destination, prepared.files, sidecar);
 
   return {
     skill: await readInstalledSkill(join(destination, 'SKILL.md'), skillsRoot),
     imported: true,
-    hermes,
   };
 }
 
@@ -847,9 +836,6 @@ async function handleSkillImportRequest(req: Request, res: Response): Promise<vo
       skill: result.skill,
       installed: result.imported,
       alreadyInstalled: false,
-      hermesExternalDirConfigured: result.hermes.configured,
-      hermesConfigChanged: result.hermes.changed,
-      skillsDir: result.hermes.path,
     });
   } catch (error) {
     sendError(res, error, 'Failed to import skill');
@@ -942,9 +928,6 @@ skillsRouter.post('/install', async (req, res) => {
       skill: result.skill,
       installed: result.installed,
       alreadyInstalled: result.alreadyInstalled,
-      hermesExternalDirConfigured: result.hermes.configured,
-      hermesConfigChanged: result.hermes.changed,
-      skillsDir: result.hermes.path,
     });
   } catch (error) {
     sendError(res, error, 'Failed to install skill');
