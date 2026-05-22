@@ -85,7 +85,7 @@ export function SkillsPage() {
           <div className="min-w-0">
             <h1 className="text-lg font-semibold text-zinc-900 dark:text-zinc-100">Skills</h1>
             <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
-              Auto-included guidance available to every Hermes task
+              Installed skills available to agent tasks
             </p>
           </div>
           <button
@@ -109,7 +109,7 @@ export function SkillsPage() {
         <div className="grid min-h-[620px] grid-cols-1 gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
           <div className="overflow-hidden rounded-lg border border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-900">
             <div className="border-b border-zinc-200 px-3 py-2 text-xs font-medium uppercase tracking-wide text-zinc-400 dark:border-zinc-800 dark:text-zinc-500">
-              Auto-included · {skills.length}
+              Installed · {skills.length}
             </div>
             <div className="max-h-[680px] divide-y divide-zinc-100 overflow-y-auto dark:divide-zinc-800">
               {loadingSkills && skills.length === 0 && (
@@ -120,7 +120,7 @@ export function SkillsPage() {
               )}
               {!loadingSkills && skills.length === 0 && (
                 <div className="px-3 py-10 text-center text-sm text-zinc-400 dark:text-zinc-500">
-                  No bundled skills found.
+                  No skills installed yet.
                 </div>
               )}
               {skills.map((skill) => (
@@ -145,8 +145,8 @@ export function SkillsPage() {
                     </div>
                   </div>
                   <div className="mt-2 flex flex-wrap gap-1.5">
-                    <SkillBadge>Bundled</SkillBadge>
-                    <SkillBadge>Auto-included</SkillBadge>
+                    <SkillBadge>Installed</SkillBadge>
+                    <SkillBadge>Available</SkillBadge>
                   </div>
                 </button>
               ))}
@@ -171,7 +171,7 @@ export function SkillsPage() {
                       </p>
                     </div>
                     <span className="shrink-0 text-xs font-medium text-zinc-500 dark:text-zinc-400">
-                      Auto-included
+                      Available
                     </span>
                   </div>
 

@@ -76,7 +76,7 @@ All persistent state lives under `MINIONS_HOME` (default: `~/.minions/`):
 - **Disconnect resilience**: If the browser disconnects during a stream, the server continues draining the worker stream to completion. On successful completion, `last_agent_response_at` is recorded for the task.
 - **Scheduled Tasks**: Hermes manages the underlying cron job state internally. Minions exposes `/api/scheduled-tasks` endpoints to list, create, edit, pause, resume, trigger, remove, and read local output files. Scheduled tasks are standalone; Minions no longer links them to task IDs.
 - **File browser**: `server/routes/files.ts` exposes CRUD operations on the `MINIONS_HOME/workspace/` directory (list, read, write, create, rename, delete, upload via multer). The client's `FileBrowserPage` provides a full file manager UI.
-- **Skills catalog**: `server/skills/catalog.ts` discovers bundled skill definitions. Exposed via `server/routes/skills.ts` and rendered in the client's `SkillsPage`.
+- **Skills**: `server/routes/skills.ts` backs the client's `SkillsPage`. It returns an empty list for now — nothing is bundled (install/upload is planned).
 - **Server imports**: Use `.js` extensions in import paths (ESM with tsx).
 
 ## Task State Machine

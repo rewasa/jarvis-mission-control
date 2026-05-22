@@ -4,7 +4,6 @@ import { once } from 'node:events';
 import { createServer } from 'node:http';
 import app, { adapter } from './app.js';
 import { mountFrontend, type FrontendCleanup } from './frontend.js';
-import { ensureBundledSkillsLinked } from './skills/catalog.js';
 
 const PORT = parseInt(process.env.PORT || '6969', 10);
 
@@ -15,7 +14,6 @@ let shuttingDown = false;
 type ShutdownReason = NodeJS.Signals | 'startup-error';
 
 async function main() {
-  ensureBundledSkillsLinked();
   closeFrontend = await mountFrontend(app, httpServer);
   try {
     await adapter.start();
