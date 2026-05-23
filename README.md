@@ -8,8 +8,11 @@ Minions gives you one screen to create, supervise, and review autonomous Hermes 
 
 Hosted access option on [Agent37](https://www.agent37.com).
 
-## Demo
+## Screenshots
 
+![Kanban board of tasks](screenshots/tasks-board.jpg)
+
+![New task creation screen](screenshots/new-task.jpg)
 
 ## Quick Start
 
