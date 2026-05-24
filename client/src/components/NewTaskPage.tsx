@@ -15,7 +15,7 @@ export function NewTaskPage() {
   const [input, setInput] = useState('');
   const [runMode, setRunMode] = useState<ChatRunMode>('task');
   const [isCreating, setIsCreating] = useState(false);
-  const { defaults, modelGroups, model, setModel, reasoningEffort, setReasoningEffort, isLoading } = useAgentConfig();
+  const { defaults, modelGroups, model, setModel, provider, setProvider, reasoningEffort, setReasoningEffort, isLoading } = useAgentConfig();
   const uploadBucketRef = useRef<string | null>(null);
   if (uploadBucketRef.current === null) uploadBucketRef.current = `draft-${crypto.randomUUID()}`;
   const uploadBucketId = uploadBucketRef.current;
@@ -62,14 +62,14 @@ export function NewTaskPage() {
       navigate(`/tasks/${task.id}`, {
         state: {
           initialMessage,
-          initialSettings: { model, reasoningEffort, mode: runMode },
+          initialSettings: { model, provider, reasoningEffort, mode: runMode },
         },
       });
     } catch (err) {
       setUploadError(toErrorMessage(err, 'Failed to create task'));
       setIsCreating(false);
     }
-  }, [defaults, uploadBlocksSend, input, isCreating, isLoading, model, navigate, pendingFiles, reasoningEffort, runMode, submitWithAttachments, setUploadError]);
+  }, [defaults, uploadBlocksSend, input, isCreating, isLoading, model, provider, navigate, pendingFiles, reasoningEffort, runMode, submitWithAttachments, setUploadError]);
 
   const handleToggleGoalMode = useCallback(() => setRunMode(toggleRunMode), []);
 
@@ -107,12 +107,16 @@ export function NewTaskPage() {
               <AttachButton onFiles={addFiles} disabled={isCreating} />
               <InputToolbar
                 model={model}
+                provider={provider}
                 reasoningEffort={reasoningEffort}
                 runMode={runMode}
                 defaults={defaults}
                 modelGroups={modelGroups}
                 disabled={isCreating}
-                onModelChange={setModel}
+                onModelChange={(nextModel, nextProvider) => {
+                  setModel(nextModel);
+                  setProvider(nextProvider ?? null);
+                }}
                 onReasoningEffortChange={setReasoningEffort}
                 onRunModeChange={setRunMode}
               />

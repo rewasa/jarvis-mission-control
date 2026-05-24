@@ -25,6 +25,7 @@ export type TerminalServerMessage =
 
 export interface AgentRunSettings {
   model?: string | null;
+  provider?: string | null;
   reasoningEffort?: ReasoningEffort | null;
   mode?: ChatRunMode;
 }
@@ -35,6 +36,7 @@ export interface Task {
   description: string | null;
   status: TaskStatus;
   agent_model: string | null;
+  agent_provider: string | null;
   reasoning_effort: ReasoningEffort | null;
   created_at: number;
   updated_at: number;
@@ -171,6 +173,7 @@ export interface AgentModelsResponse {
 export interface TaskAgentSettings {
   task: {
     model: string | null;
+    provider: string | null;
     reasoningEffort: ReasoningEffort | null;
   };
   defaults: AgentDefaults;

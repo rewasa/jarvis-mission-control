@@ -12,9 +12,26 @@ import { resolveMinionsWorkspaceDir } from './paths.js';
 const DEFAULT_COLS = 80;
 const DEFAULT_ROWS = 24;
 
+const INHERITED_TERMINAL_ENV_KEYS_TO_DROP = new Set([
+  'TERM_PROGRAM',
+  'TERM_PROGRAM_VERSION',
+  'TERM_SESSION_ID',
+]);
+
 function pickShell(): string {
   if (process.platform === 'win32') return process.env.COMSPEC || 'cmd.exe';
   return process.env.SHELL || '/bin/zsh';
+}
+
+function buildTerminalEnv(): { [key: string]: string } {
+  const env: { [key: string]: string } = {};
+  for (const [key, value] of Object.entries(process.env)) {
+    if (value === undefined || INHERITED_TERMINAL_ENV_KEYS_TO_DROP.has(key)) continue;
+    env[key] = value;
+  }
+
+  env.TERM = 'xterm-256color';
+  return env;
 }
 
 function safeDimension(value: unknown, fallback: number): number {
@@ -38,7 +55,7 @@ function handleConnection(ws: WebSocket): void {
       cols: DEFAULT_COLS,
       rows: DEFAULT_ROWS,
       cwd: resolveMinionsWorkspaceDir(),
-      env: { ...process.env, TERM: 'xterm-256color' } as { [key: string]: string },
+      env: buildTerminalEnv(),
     });
   } catch (error) {
     sendServerMessage(ws, {

@@ -101,6 +101,7 @@ type ScheduledTaskFormState = {
   rawSchedule: string;
   deliver: string;
   model: string;
+  provider: string;
   workdir: string;
   repeatMode: RepeatMode;
   repeatCount: string;
@@ -264,6 +265,7 @@ function initialFormState(scheduledTask?: ScheduledTask, template?: ScheduledTas
     ...schedule,
     deliver: deliver || 'local',
     model: scheduledTask?.model ?? '',
+    provider: scheduledTask?.provider ?? '',
     workdir: scheduledTask?.workdir ?? '',
     repeatMode: repeatTimes === 1 ? 'once' : repeatTimes ? 'times' : 'forever',
     repeatCount: repeatTimes && repeatTimes > 1 ? String(repeatTimes) : '3',
@@ -287,6 +289,8 @@ function scheduledTaskInputFromForm(form: ScheduledTaskFormState, previous?: Sch
 
   if (form.model.trim()) input.model = form.model.trim();
   else if (previous?.model) input.model = null;
+  if (form.provider.trim()) input.provider = form.provider.trim();
+  else if (previous?.provider) input.provider = null;
   if (form.workdir.trim()) input.workdir = form.workdir.trim();
   else if (previous?.workdir) input.workdir = null;
   if (repeat !== null) input.repeat = repeat;
@@ -940,10 +944,12 @@ function ScheduledTaskEditorPage({
             <div className="mt-3">
               <ModelPicker
                 value={form.model}
-                defaultModel={agentDefaults?.model ?? null}
+                provider={form.provider || null}
+                fallback={agentDefaults?.model ?? null}
+                fallbackProvider={agentDefaults?.provider ?? null}
                 modelGroups={modelGroups}
                 title="Scheduled task model"
-                onChange={(model) => patch({ model })}
+                onChange={(model, selection) => patch({ model, provider: selection?.provider ?? '' })}
               />
             </div>
           </section>
