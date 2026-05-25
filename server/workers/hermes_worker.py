@@ -1259,7 +1259,6 @@ def _run_chat(request_id: str, request: dict[str, Any]) -> None:
 
         clear_session_vars = _clear_session_vars
         session_tokens = set_session_vars(
-            platform="minions",
             chat_id=task_id,
             chat_name=task_title,
             session_key=session_id,
