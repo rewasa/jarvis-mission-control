@@ -44,7 +44,7 @@ function ThinkingBlock({ content, isLive }: { content: string; isLive: boolean }
         {isLive && <Loader2 size={10} className="animate-spin" />}
       </button>
       {expanded && (
-        <div className="mt-2 ml-1 pl-4 py-1 border-l-2 border-zinc-200 dark:border-zinc-700 text-xs text-zinc-400 dark:text-zinc-500 whitespace-pre-wrap leading-relaxed max-h-60 overflow-y-auto">
+        <div className="mt-2 ml-1 pl-4 py-1 border-l-2 border-zinc-200 dark:border-zinc-700 text-xs text-zinc-400 dark:text-zinc-500 whitespace-pre-wrap break-words leading-relaxed max-h-60 overflow-y-auto overflow-x-hidden">
           {content}
         </div>
       )}
@@ -66,7 +66,7 @@ const TOOL_ICONS: Record<string, typeof Terminal> = {
   browser_vision: Globe,
 };
 
-const CHAT_COLUMN_CLASS = 'w-full max-w-[760px] mx-auto';
+const CHAT_COLUMN_CLASS = 'w-full min-w-0 max-w-[760px] mx-auto';
 const PLACEHOLDER_CLASS = 'text-sm text-zinc-400 dark:text-zinc-500 text-center py-12';
 
 function ConversationDivider({ children }: { children: React.ReactNode }) {
@@ -183,7 +183,7 @@ function GoalRunStatus({ goal }: { goal: GoalStateSnapshot | null | undefined })
 
   return (
     <div className={`${CHAT_COLUMN_CLASS} mb-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-800 shadow-sm dark:border-zinc-700 dark:bg-zinc-900/70 dark:text-zinc-100`}>
-      <div className="flex min-w-0 items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2 overflow-hidden">
         <Target size={14} strokeWidth={2.5} className="shrink-0" />
         <span className="shrink-0 font-semibold">Goal active</span>
         {turnLabel && (
@@ -522,7 +522,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
       <div className="relative flex-1 min-h-0">
         <div
           ref={messagesContainerRef}
-          className="h-full overflow-y-auto px-3 py-3 sm:px-6 sm:py-4"
+          className="h-full overflow-y-auto overflow-x-hidden px-3 py-3 sm:px-6 sm:py-4"
         >
           <div className={`${CHAT_COLUMN_CLASS} space-y-3`}>
             {isLoadingMessages ? (
@@ -554,8 +554,8 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
                 return (
                   <Fragment key={msg.id}>
                     {compactDivider}
-                    <div ref={isLatestUserMessage ? latestUserMessageRef : undefined} className="flex justify-end">
-                      <div className="max-w-[92%] rounded-2xl bg-zinc-100 px-3.5 py-2.5 text-sm leading-relaxed text-zinc-900 whitespace-pre-wrap dark:bg-zinc-800 dark:text-zinc-100 sm:max-w-[85%] sm:px-4">
+                    <div ref={isLatestUserMessage ? latestUserMessageRef : undefined} className="flex min-w-0 justify-end">
+                      <div className="min-w-0 max-w-[92%] overflow-hidden rounded-2xl bg-zinc-100 px-3.5 py-2.5 text-sm leading-relaxed text-zinc-900 whitespace-pre-wrap break-words dark:bg-zinc-800 dark:text-zinc-100 sm:max-w-[85%] sm:px-4">
                         {msg.content}
                       </div>
                     </div>
@@ -572,8 +572,8 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
               return (
                 <Fragment key={msg.id}>
                   {compactDivider}
-                  <div className="flex justify-start">
-                    <div className="w-full sm:px-2">
+                  <div className="flex min-w-0 justify-start">
+                    <div className="min-w-0 w-full sm:px-2">
                       {thinkingToShow && (
                         <ThinkingBlock content={thinkingToShow} isLive={isLiveThinking} />
                       )}
@@ -584,7 +584,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
                           ))}
                         </div>
                       )}
-                      <div className="text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
+                      <div className="min-w-0 max-w-full overflow-hidden text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
                         {msg.content ? (
                           <MarkdownContent content={msg.content} isStreaming={isLastAssistant && isStreaming} />
                         ) : (
@@ -638,7 +638,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
             disabled={configPending}
             placeholder={runMode === 'goal' ? GOAL_MODE_PLACEHOLDER : 'Message your assistant...'}
             rows={2}
-            className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-sm leading-relaxed text-zinc-900 placeholder-zinc-400 focus:outline-none disabled:opacity-60 dark:text-zinc-100 dark:placeholder-zinc-500 sm:px-5"
+            className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-base leading-relaxed text-zinc-900 placeholder-zinc-400 focus:outline-none disabled:opacity-60 dark:text-zinc-100 dark:placeholder-zinc-500 sm:px-5 sm:text-sm"
           />
           <AttachmentTray files={pendingFiles} onRemove={removeFile} onRetry={retryFile} />
           {uploadError && <UploadErrorBar error={uploadError} onDismiss={() => setUploadError(null)} />}
