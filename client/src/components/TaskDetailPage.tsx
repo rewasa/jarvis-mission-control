@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
-import { MoreHorizontal, Trash2, Loader2, Pencil, Check } from 'lucide-react';
+import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch } from 'lucide-react';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
 import { useStore, optimisticMoveTask } from '../lib/store';
@@ -155,6 +155,9 @@ export function TaskDetailPage() {
   }
 
   const statusMeta = STATUS_META[task.status];
+  const parentTask = task.parent_task_id
+    ? useStore.getState().tasks.find((candidate) => candidate.id === task.parent_task_id) ?? null
+    : null;
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
@@ -217,6 +220,24 @@ export function TaskDetailPage() {
               <span className="text-xs text-zinc-400 dark:text-zinc-500 shrink-0">
                 {timeAgo(task.updated_at)}
               </span>
+              {task.parent_task_id && (
+                <span className="inline-flex max-w-[260px] items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+                  <GitBranch size={12} strokeWidth={2.5} className="shrink-0" />
+                  <span className="shrink-0">Subissue of</span>
+                  {parentTask ? (
+                    <button
+                      type="button"
+                      onClick={() => navigate(`/tasks/${parentTask.id}`)}
+                      className="min-w-0 truncate font-medium text-zinc-800 underline decoration-zinc-300 underline-offset-2 hover:text-zinc-950 dark:text-zinc-100 dark:decoration-zinc-600 dark:hover:text-white"
+                      title={parentTask.title}
+                    >
+                      {parentTask.title}
+                    </button>
+                  ) : (
+                    <span className="min-w-0 truncate font-mono text-[11px]">{task.parent_task_id}</span>
+                  )}
+                </span>
+              )}
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2.5">
