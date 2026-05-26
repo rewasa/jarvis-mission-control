@@ -4,7 +4,7 @@ import { fileURLToPath } from 'node:url';
 import type { AppVersion } from '@shared/types';
 
 const FALLBACK_VERSION: AppVersion = {
-  name: 'minionsai',
+  name: 'jarvis-mission-control',
   version: 'unknown',
 };
 

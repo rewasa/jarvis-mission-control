@@ -27,10 +27,10 @@ if (command === '--help' || command === '-h' || command === 'help') {
   const metadata = readPackageMetadata();
   console.log(`Usage: minions [options]
 
-${metadata.description ?? 'Mission Control for Hermes Agent'}
+${metadata.description ?? 'Jarvis Mission Control — mission control for Hermes Agent'}
 
 Options:
-  -v, --version  Print the installed Minions version
+  -v, --version  Print the version
   -h, --help     Show this help message`);
   process.exit(0);
 }

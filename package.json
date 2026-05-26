@@ -1,7 +1,7 @@
 {
-  "name": "minionsai",
-  "version": "0.1.14",
-  "description": "Mission Control for Hermes Agent — a Kanban board for autonomous agent tasks",
+  "name": "jarvis-mission-control",
+  "version": "0.1.0",
+  "description": "Jarvis Mission Control — a Hermes-native mission control dashboard with task hierarchy, Cloudflare Tunnel support, and Linear-style Kanban",
   "license": "MIT",
   "type": "module",
   "bin": {
