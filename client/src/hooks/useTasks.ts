@@ -13,7 +13,19 @@ export function useTasks() {
   const retryRef = useRef(0);
 
   useEffect(() => {
-    fetchTasks().then((res) => setTasks(res.tasks)).catch(console.error);
+    fetchTasks().then((res) => {
+      const countByParent = new Map<string, number>();
+      for (const t of res.tasks) {
+        if (t.parent_task_id) {
+          countByParent.set(t.parent_task_id, (countByParent.get(t.parent_task_id) ?? 0) + 1);
+        }
+      }
+      const tasks = res.tasks.map((t) => ({
+        ...t,
+        child_count: countByParent.get(t.id) ?? 0,
+      }));
+      setTasks(tasks);
+    }).catch(console.error);
   }, [setTasks]);
 
   useEffect(() => {
@@ -27,7 +39,15 @@ export function useTasks() {
 
       es.onopen = () => {
         if (retryRef.current > 0) {
-          fetchTasks().then((res) => setTasks(res.tasks)).catch(console.error);
+          fetchTasks().then((res) => {
+            const countByParent = new Map<string, number>();
+            for (const t of res.tasks) {
+              if (t.parent_task_id) {
+                countByParent.set(t.parent_task_id, (countByParent.get(t.parent_task_id) ?? 0) + 1);
+              }
+            }
+            setTasks(res.tasks.map((t) => ({ ...t, child_count: countByParent.get(t.id) ?? 0 })));
+          }).catch(console.error);
         }
         retryRef.current = 0;
       };
