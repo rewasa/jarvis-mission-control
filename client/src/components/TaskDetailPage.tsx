@@ -1,11 +1,12 @@
-import { useState, useCallback, useEffect, useRef } from 'react';
+import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
-import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock } from 'lucide-react';
+import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock, ArrowRight, MessageSquareText, X } from 'lucide-react';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
 import { useStore, optimisticMoveTask } from '../lib/store';
 import { toast } from 'sonner';
-import { deleteTask, fetchSubissues, fetchTask, patchTask, moveTask, markTaskViewed } from '../lib/api';
+import { deleteTask, fetchSubtasks, fetchTask, patchTask, moveTask, markTaskViewed } from '../lib/api';
 import { DELEGATION_STATUSES, TASK_STATUSES } from '@shared/types';
 import { STATUS_META } from '../lib/constants';
 import { timeAgo } from '../lib/format';
@@ -35,44 +36,136 @@ function DelegationBadge({ status }: { status: DelegationStatus | null }) {
   );
 }
 
-function SubissuesPanel({ parent, subissues }: { parent: Task; subissues: Task[] }) {
-  if (parent.parent_task_id || subissues.length === 0) return null;
+function SubtaskRow({ subtask }: { subtask: Task }) {
+  const statusMeta = STATUS_META[subtask.status];
+  return (
+    <Link
+      to={`/tasks/${subtask.id}`}
+      className="group block rounded-lg border border-zinc-200 bg-white p-3 transition-[border-color,box-shadow] hover:border-zinc-300 hover:shadow-sm dark:border-zinc-800 dark:bg-zinc-900/90 dark:hover:border-zinc-700"
+    >
+      <div className="mb-1.5 flex flex-wrap items-center gap-1">
+        <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${statusMeta.tint}`}>
+          <StatusIcon status={subtask.status} />
+          {statusMeta.label}
+        </span>
+        <DelegationBadge status={subtask.delegation_status} />
+      </div>
+      <div className="line-clamp-2 text-xs font-semibold leading-5 text-zinc-900 group-hover:text-zinc-950 dark:text-zinc-100 dark:group-hover:text-white">
+        {subtask.title}
+      </div>
+      <div className="mt-2 flex items-center justify-between text-[10px] text-zinc-400 dark:text-zinc-500">
+        <span>{timeAgo(subtask.updated_at)}</span>
+        <span className="inline-flex items-center gap-0.5 font-medium text-zinc-500 group-hover:text-zinc-700 dark:text-zinc-400 dark:group-hover:text-zinc-200">
+          <MessageSquareText size={10} strokeWidth={2.5} />
+          Open
+          <ArrowRight size={10} strokeWidth={2.5} className="transition-transform group-hover:translate-x-0.5" />
+        </span>
+      </div>
+    </Link>
+  );
+}
+
+function SubtasksSidebar({ subtasks }: { subtasks: Task[] }) {
+  const doneCount = subtasks.filter((s) => s.status === 'done').length;
+  const runningCount = subtasks.filter((s) => s.delegation_status === 'running').length;
+  const blockedCount = subtasks.filter((s) => s.delegation_status === 'blocked').length;
+  const progress = Math.round((doneCount / subtasks.length) * 100);
 
   return (
-    <div className="border-y border-zinc-200 bg-zinc-50/70 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-950/30 sm:px-6">
-      <div className="mb-2 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-        <GitBranch size={13} strokeWidth={2.5} />
-        Subissues
-        <span className="rounded-full bg-zinc-200 px-1.5 py-0.5 text-[10px] text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">{subissues.length}</span>
+    <aside className="hidden lg:flex w-72 xl:w-80 shrink-0 flex-col border-l border-zinc-200 bg-zinc-50/40 dark:border-zinc-800 dark:bg-zinc-950/30">
+      <div className="shrink-0 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+        <div className="mb-2 flex items-center gap-2">
+          <span className="inline-flex h-6 w-6 items-center justify-center rounded-md border border-zinc-200 bg-white text-zinc-600 shadow-sm dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+            <GitBranch size={12} strokeWidth={2.5} />
+          </span>
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Subtasks</span>
+          <span className="ml-auto rounded-full bg-zinc-200 px-1.5 py-0.5 text-[10px] font-semibold tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+            {subtasks.length}
+          </span>
+        </div>
+        <div className="mb-1.5 flex items-center justify-between gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
+          <span className="font-medium">{doneCount}/{subtasks.length} done</span>
+          <div className="flex items-center gap-2">
+            {runningCount > 0 && <span className="text-amber-600 dark:text-amber-400">{runningCount} running</span>}
+            {blockedCount > 0 && <span className="text-red-500 dark:text-red-400">{blockedCount} blocked</span>}
+          </div>
+        </div>
+        <div className="h-1 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+          <div
+            className="h-full rounded-full bg-emerald-500 transition-[width] duration-300 ease-out dark:bg-emerald-400"
+            style={{ width: `${progress}%` }}
+          />
+        </div>
       </div>
-      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-3">
-        {subissues.map((subissue) => {
-          const statusMeta = STATUS_META[subissue.status];
-          return (
-            <Link
-              key={subissue.id}
-              to={`/tasks/${subissue.id}`}
-              className="group rounded-lg border border-zinc-200 bg-white p-3 shadow-sm transition-[border-color,box-shadow,background-color] hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900 dark:hover:border-zinc-700"
-            >
-              <div className="mb-2 flex flex-wrap items-center gap-1.5">
-                <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] font-medium ${statusMeta.tint}`}>
-                  <StatusIcon status={subissue.status} />
-                  {statusMeta.label}
-                </span>
-                <DelegationBadge status={subissue.delegation_status} />
-              </div>
-              <div className="line-clamp-2 text-sm font-medium text-zinc-900 group-hover:text-zinc-950 dark:text-zinc-100 dark:group-hover:text-white">
-                {subissue.title}
-              </div>
-              <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
-                <span>{timeAgo(subissue.updated_at)}</span>
-                <span className="font-semibold text-zinc-700 group-hover:underline dark:text-zinc-200">Open chat history →</span>
-              </div>
-            </Link>
-          );
-        })}
+      <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+        <div className="flex flex-col gap-2">
+          {subtasks.map((subtask) => (
+            <SubtaskRow key={subtask.id} subtask={subtask} />
+          ))}
+        </div>
       </div>
-    </div>
+    </aside>
+  );
+}
+
+function SubtasksSlideover({ subtasks, onClose }: { subtasks: Task[]; onClose: () => void }) {
+  const doneCount = subtasks.filter((s) => s.status === 'done').length;
+  const runningCount = subtasks.filter((s) => s.delegation_status === 'running').length;
+  const blockedCount = subtasks.filter((s) => s.delegation_status === 'blocked').length;
+  const progress = Math.round((doneCount / subtasks.length) * 100);
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex flex-col lg:hidden">
+      <div className="absolute inset-0 bg-black/30 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative ml-auto flex h-full w-full max-w-sm flex-col border-l border-zinc-200 bg-white shadow-xl dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+          <div className="flex items-center gap-2">
+            <GitBranch size={14} strokeWidth={2.5} className="text-zinc-500 dark:text-zinc-400" />
+            <span className="text-sm font-semibold text-zinc-800 dark:text-zinc-200">Subtasks</span>
+            <span className="rounded-full bg-zinc-200 px-1.5 py-0.5 text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+              {subtasks.length}
+            </span>
+          </div>
+          <button
+            onClick={onClose}
+            className="rounded-md p-1.5 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-600 dark:text-zinc-500 dark:hover:bg-zinc-800 dark:hover:text-zinc-300"
+          >
+            <X size={16} strokeWidth={2.5} />
+          </button>
+        </div>
+        <div className="shrink-0 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+          <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+            <span className="font-medium">{doneCount}/{subtasks.length} done</span>
+            <div className="flex items-center gap-2">
+              {runningCount > 0 && <span className="text-amber-600 dark:text-amber-400">{runningCount} running</span>}
+              {blockedCount > 0 && <span className="text-red-500 dark:text-red-400">{blockedCount} blocked</span>}
+            </div>
+          </div>
+          <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
+            <div
+              className="h-full rounded-full bg-emerald-500 transition-[width] duration-300 ease-out dark:bg-emerald-400"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+        <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+          <div className="flex flex-col gap-2.5">
+            {subtasks.map((subtask) => (
+              <SubtaskRow key={subtask.id} subtask={subtask} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -89,14 +182,16 @@ export function TaskDetailPage() {
   const tasksLoaded = useStore((s) => s.tasksLoaded);
   const upsertTask = useStore((s) => s.upsertTask);
   const removeTask = useStore((s) => s.removeTask);
-  const subissues = useStore((s) => (taskId ? s.subissuesByParent.get(taskId) ?? [] : []));
-  const setSubissues = useStore((s) => s.setSubissues);
+  const allSubtasks = useStore((s) => (taskId ? s.subtasksByParent.get(taskId) : undefined));
+  const subtasks = useMemo(() => allSubtasks ?? [], [allSubtasks]);
+  const setSubtasks = useStore((s) => s.setSubtasks);
 
   const [titleDraft, setTitleDraft] = useState('');
   const titleInputRef = useRef<HTMLInputElement>(null);
   const skipNextTitleSaveRef = useRef(false);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
+  const [showSubtasksSlideover, setShowSubtasksSlideover] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const markViewedInFlightRef = useRef<string | null>(null);
   const [detailFetchInFlight, setDetailFetchInFlight] = useState(false);
@@ -177,15 +272,15 @@ export function TaskDetailPage() {
   useEffect(() => {
     if (!task || task.parent_task_id) return;
     let cancelled = false;
-    fetchSubissues(task.id)
+    fetchSubtasks(task.id)
       .then((res) => {
-        if (!cancelled) setSubissues(task.id, res.subissues);
+        if (!cancelled) setSubtasks(task.id, res.subtasks);
       })
       .catch(() => {});
     return () => {
       cancelled = true;
     };
-  }, [task?.id, task?.parent_task_id, setSubissues]);
+  }, [task?.id, task?.parent_task_id, setSubtasks]);
 
   useEffect(() => {
     if (!showMenu) return;
@@ -348,7 +443,7 @@ export function TaskDetailPage() {
               {task.parent_task_id && (
                 <span className="inline-flex max-w-[260px] items-center gap-1.5 rounded-md border border-zinc-200 bg-zinc-50 px-2 py-0.5 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
                   <GitBranch size={12} strokeWidth={2.5} className="shrink-0" />
-                  <span className="shrink-0">Subissue of</span>
+                  <span className="shrink-0">Subtask of</span>
                   {parentTask ? (
                     <button
                       type="button"
@@ -410,6 +505,21 @@ export function TaskDetailPage() {
                       </button>
                     ))}
                     <div className="my-1 border-t border-zinc-200 dark:border-zinc-800" />
+                    {!task.parent_task_id && subtasks.length > 0 && (
+                      <>
+                        <p className="px-3 py-1.5 text-[11px] font-medium text-zinc-400 dark:text-zinc-500 uppercase tracking-wider lg:hidden">
+                          Subtasks
+                        </p>
+                        <button
+                          onClick={() => { setShowMenu(false); setShowSubtasksSlideover(true); }}
+                          className="lg:hidden w-full flex items-center gap-2.5 px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left"
+                        >
+                          <GitBranch size={14} strokeWidth={2} />
+                          Subtasks ({subtasks.length})
+                        </button>
+                        <div className="lg:hidden my-1 border-t border-zinc-200 dark:border-zinc-800" />
+                      </>
+                    )}
                     <button
                       onClick={() => { setShowMenu(false); setShowDeleteConfirm(true); }}
                       className="w-full flex items-center gap-2.5 px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left"
@@ -425,10 +535,21 @@ export function TaskDetailPage() {
         </div>
       </div>
 
-      <div className="w-full flex-1 flex flex-col min-h-0">
-        <SubissuesPanel parent={task} subissues={subissues} />
-        <TaskChat taskId={task.id} initialMessage={initialMessage} initialSettings={initialSettings} />
+      <div className="w-full flex-1 flex flex-row min-h-0">
+        <div className="flex-1 flex flex-col min-h-0">
+          <TaskChat taskId={task.id} initialMessage={initialMessage} initialSettings={initialSettings} />
+        </div>
+        {!task.parent_task_id && subtasks.length > 0 && (
+          <SubtasksSidebar subtasks={subtasks} />
+        )}
       </div>
+
+      {showSubtasksSlideover && subtasks.length > 0 && (
+        <SubtasksSlideover
+          subtasks={subtasks}
+          onClose={() => setShowSubtasksSlideover(false)}
+        />
+      )}
 
       {showDeleteConfirm && (
         <DeleteConfirmModal
