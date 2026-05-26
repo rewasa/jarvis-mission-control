@@ -168,8 +168,8 @@ export function createSubissue(taskId: string, input: SubissueInput) {
   });
 }
 
-export function fetchScheduledTasks(includeDisabled = true) {
-  return request<{ scheduledTasks: ScheduledTask[] }>(`/scheduled-tasks?includeDisabled=${includeDisabled ? 'true' : 'false'}`);
+export function fetchScheduledTasks(includeDisabled = true, limit = 100) {
+  return request<{ scheduledTasks: ScheduledTask[] }>(`/scheduled-tasks?includeDisabled=${includeDisabled ? 'true' : 'false'}&limit=${limit}`);
 }
 
 export function fetchScheduledTask(scheduledTaskId: string) {
@@ -312,7 +312,7 @@ export function updateScheduledTask(scheduledTaskId: string, updates: Partial<Sc
   });
 }
 
-export function fetchScheduledTaskRuns(scheduledTaskId: string, limit = 20) {
+export function fetchScheduledTaskRuns(scheduledTaskId: string, limit = 50) {
   return request<{ runs: ScheduledTaskRun[] }>(`/scheduled-tasks/${encodeURIComponent(scheduledTaskId)}/runs?limit=${limit}`);
 }
 

@@ -35,4 +35,13 @@ for (const sql of MIGRATIONS) {
   try { db.exec(sql); } catch { /* column/index already exists — noop */ }
 }
 
+function ensureColumn(table: string, column: string, ddl: string): void {
+  const info = db.prepare(`PRAGMA table_info(${table})`).all() as Array<{ name: string }>;
+  if (!info.some((row) => row.name === column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${ddl}`);
+  }
+}
+
+ensureColumn('tasks', 'agent_provider', 'TEXT');
+
 export default db;

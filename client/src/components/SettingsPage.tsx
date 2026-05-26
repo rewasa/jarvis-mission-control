@@ -6,7 +6,7 @@ import { useAgentConfig } from '../hooks/useAgentConfig';
 import { fetchAppVersion, updateAgentDefaults } from '../lib/api';
 import type { AppVersion } from '@shared/types';
 import { toErrorMessage } from '../lib/format';
-import { ModelPicker, REASONING_LABELS, type ModelPickerSelection } from './InputToolbar';
+import { ModelPicker, parseQualifiedModelValue, REASONING_LABELS, type ModelPickerSelection } from './InputToolbar';
 import {
   REASONING_EFFORTS,
   type ReasoningEffort,
@@ -48,16 +48,6 @@ function SegmentedGroup<T>({ options, value, onChange }: {
       ))}
     </div>
   );
-}
-
-function splitQualifiedModel(value: string): { provider: string; model: string } | null {
-  if (!value.startsWith('@')) return null;
-  const separator = value.lastIndexOf(':');
-  if (separator <= 1 || separator === value.length - 1) return null;
-  return {
-    provider: value.slice(1, separator),
-    model: value.slice(separator + 1),
-  };
 }
 
 export function SettingsPage() {
@@ -151,17 +141,16 @@ export function SettingsPage() {
           <div className="mt-4 flex items-center flex-wrap gap-3">
             <ModelPicker
               value={agentDefaults?.model ?? ''}
-              defaultModel={null}
+              provider={agentDefaults?.provider ?? null}
               modelGroups={modelGroups}
               disabled={isLoadingDefaults || savingDefaults}
               title={agentDefaults?.model ? `Default: ${agentDefaults.model}` : 'Select default model'}
-              showInheritOption={false}
               onChange={(nextModel, selection?: ModelPickerSelection) => {
-                const parsed = splitQualifiedModel(nextModel);
-                const provider = selection?.provider ?? parsed?.provider ?? undefined;
+                const parsed = parseQualifiedModelValue(nextModel);
+                const provider = selection?.provider ?? parsed?.provider;
                 saveDefaults({
-                  model: parsed?.model ?? (nextModel || null),
-                  ...(provider !== undefined ? { provider } : {}),
+                  model: parsed?.model ?? nextModel,
+                  ...(provider ? { provider } : {}),
                 });
               }}
             />

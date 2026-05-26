@@ -537,10 +537,11 @@ export class HermesWorkerAdapter implements AgentAdapter {
     return await this.client.request<AgentModelsResponse>('models.list');
   }
 
-  async listScheduledTasks(includeDisabled = false): Promise<ScheduledTask[]> {
+  async listScheduledTasks(includeDisabled = false, limit = 100): Promise<ScheduledTask[]> {
     const result = await this.client.request<{ scheduledTasks: ScheduledTask[] }>({
       type: 'scheduledTasks.list',
       includeDisabled,
+      limit,
     });
     return result.scheduledTasks;
   }

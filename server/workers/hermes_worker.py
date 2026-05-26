@@ -794,11 +794,17 @@ def _list_models() -> dict[str, Any]:
     return result
 
 
-def _resolve_model_provider(requested_model: str | None, cfg: dict[str, Any] | None = None) -> tuple[str, str | None, str | None]:
+def _resolve_model_provider(
+    requested_model: str | None,
+    cfg: dict[str, Any] | None = None,
+    requested_provider: str | None = None,
+) -> tuple[str, str | None, str | None]:
     cfg = cfg if cfg is not None else _load_config()
     model_cfg = _model_section(cfg)
-    config_provider = string_or_none(model_cfg.get("provider"))
+    config_provider = string_or_none(requested_provider) or string_or_none(model_cfg.get("provider"))
     config_base_url = string_or_none(model_cfg.get("base_url"))
+    if requested_provider and string_or_none(requested_provider) != string_or_none(model_cfg.get("provider")):
+        config_base_url = None
     config_provider_l = (config_provider or "").lower()
     default_model = string_or_none(model_cfg.get("default"))
     model_id = (requested_model or default_model or "").strip()
@@ -908,13 +914,16 @@ def _create_agent(
     session_id: str,
     requested_model: str | None,
     reasoning_effort: str | None,
+    requested_provider: str | None = None,
     callbacks: dict[str, Any] | None = None,
 ) -> Any:
     _ensure_imports()
     cfg = _load_config()
     defaults = _defaults_from_config(cfg)
     resolved_reasoning_effort = reasoning_effort or defaults.get("reasoningEffort")
-    resolved_model, resolved_provider, resolved_base_url = _resolve_model_provider(requested_model, cfg)
+    resolved_model, resolved_provider, resolved_base_url = _resolve_model_provider(
+        requested_model, cfg, requested_provider=requested_provider,
+    )
 
     try:
         from hermes_cli.runtime_provider import resolve_runtime_provider  # type: ignore
@@ -1161,6 +1170,7 @@ def _goal_evaluate(request: dict[str, Any]) -> dict[str, Any]:
 def _run_chat(request_id: str, request: dict[str, Any]) -> None:
     settings = request.get("settings") if isinstance(request.get("settings"), dict) else {}
     requested_model = string_or_none(settings.get("model"))
+    requested_provider = string_or_none(settings.get("provider"))
     requested_effort = _normalize_reasoning(settings.get("reasoningEffort"))
 
     session_id = string_or_none(request.get("sessionId")) or request_id
@@ -1250,6 +1260,7 @@ def _run_chat(request_id: str, request: dict[str, Any]) -> None:
     agent = _create_agent(
         session_id=session_id,
         requested_model=requested_model,
+        requested_provider=requested_provider,
         reasoning_effort=requested_effort,
         callbacks={
             "stream_delta_callback": on_text_delta,
@@ -1421,6 +1432,7 @@ def _run_compress(request: dict[str, Any]) -> dict[str, Any]:
     focus_topic = string_or_none(request.get("focusTopic"))
     settings = request.get("settings") if isinstance(request.get("settings"), dict) else {}
     requested_model = string_or_none(settings.get("model"))
+    requested_provider = string_or_none(settings.get("provider"))
     requested_effort = _normalize_reasoning(settings.get("reasoningEffort"))
 
     session_db, live_session_id = open_session(session_id)
@@ -1431,6 +1443,7 @@ def _run_compress(request: dict[str, Any]) -> dict[str, Any]:
     agent = _create_agent(
         session_id=live_session_id,
         requested_model=requested_model,
+        requested_provider=requested_provider,
         reasoning_effort=requested_effort,
     )
 
@@ -1561,7 +1574,7 @@ def _handle_request(request: dict[str, Any]) -> None:
         elif request_type == "models.list":
             _result(request_id, _list_models())
         elif request_type == "scheduledTasks.list":
-            _result(request_id, list_scheduled_tasks(bool(request.get("includeDisabled"))))
+            _result(request_id, list_scheduled_tasks(bool(request.get("includeDisabled")), request.get("limit")))
         elif request_type == "scheduledTasks.get":
             _result(request_id, get_scheduled_task(request.get("scheduledTaskId")))
         elif request_type == "scheduledTasks.create":

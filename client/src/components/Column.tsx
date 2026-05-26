@@ -73,7 +73,11 @@ export function Column({ status, tasks, taskRuns, isLast = false, onRequestDelet
         }`}
       >
         {tasks.map((task) => (
-          <AgentControlCard key={task.id} task={task} run={taskRuns.get(task.id)} />
+          <AgentControlCard
+            key={task.id}
+            task={task}
+            run={taskRuns.get(task.id)}
+          />
         ))}
         {showAddButton && (
           <div className="h-9 shrink-0">
