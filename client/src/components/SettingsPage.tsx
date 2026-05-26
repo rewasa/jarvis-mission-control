@@ -77,7 +77,7 @@ export function SettingsPage() {
         if (!cancelled) setAppVersion(v);
       })
       .catch(() => {
-        if (!cancelled) setAppVersion({ name: 'minionsai', version: 'unknown' });
+        if (!cancelled) setAppVersion({ name: 'AgentControl', version: 'unknown' });
       });
 
     return () => {
@@ -207,7 +207,7 @@ export function SettingsPage() {
           <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500 mb-2">Version</h2>
           <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-medium text-zinc-900 dark:text-zinc-100">
             <Info size={14} />
-            Minions
+            AgentControl
             <span className="text-zinc-500 dark:text-zinc-400">
               {appVersion ? `v${appVersion.version}` : '...'}
             </span>

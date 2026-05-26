@@ -16,7 +16,7 @@ import { useStore, optimisticMoveTask } from '../lib/store';
 import { deleteTask, moveTask } from '../lib/api';
 import { Column } from './Column';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
-import { JarvisCardOverlay } from './JarvisCard';
+import { AgentControlCardOverlay } from './AgentControlCard';
 
 const dropAnimation = {
   duration: 200,
@@ -132,7 +132,7 @@ export function Board() {
       </div>
       <DragOverlay dropAnimation={dropAnimation}>
         {activeTask && (
-          <JarvisCardOverlay
+          <AgentControlCardOverlay
             task={activeTask}
             run={taskRuns.get(activeTask.id)}
           />
@@ -143,8 +143,8 @@ export function Board() {
           title={`Delete ${deleteAllCount} ${deleteAllLabel} ${deleteAllTaskWord}?`}
           body={
             deleteAllCount === 1
-              ? `This removes the task in ${deleteAllLabel} from Minions. The Hermes session history remains in Hermes.`
-              : `This removes every task in ${deleteAllLabel} from Minions. Hermes session histories remain in Hermes.`
+              ? `This removes the task in ${deleteAllLabel} from AgentControl. The Hermes session history remains in Hermes.`
+              : `This removes every task in ${deleteAllLabel} from AgentControl. Hermes session histories remain in Hermes.`
           }
           confirmLabel={deleteAllCount === 1 ? 'Delete task' : `Delete ${deleteAllCount} tasks`}
           isConfirming={isBulkDeleting}

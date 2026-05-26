@@ -6,7 +6,7 @@ import app, { adapter } from './app.js';
 import { mountFrontend, type FrontendCleanup } from './frontend.js';
 import { ensureHermesExternalSkillsDir } from './routes/skills.js';
 
-const PORT = parseInt(process.env.PORT || '6969', 10);
+const PORT = parseInt(process.env.PORT || '7460', 10);
 const HOST = process.env.HOST || '127.0.0.1';
 
 const httpServer = createServer(app);
@@ -37,7 +37,7 @@ async function main() {
   httpServer.listen(PORT, HOST);
   await once(httpServer, 'listening');
 
-  console.log(`Hermes Agent Mission Control running on http://${HOST}:${PORT}`);
+  console.log(`AgentControl running on http://${HOST}:${PORT}`);
 }
 
 function closeHttpServer(): Promise<void> {

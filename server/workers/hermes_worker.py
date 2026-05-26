@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""JSONL bridge between Minions and Hermes AIAgent."""
+"""JSONL bridge between AgentControl and Hermes AIAgent."""
 
 from __future__ import annotations
 
@@ -954,7 +954,7 @@ def _create_agent(
         "api_key": runtime.get("api_key"),
         "quiet_mode": True,
         "verbose_logging": False,
-        "platform": "minions",
+        "platform": "agentcontrol",
         "session_id": session_id,
         "session_db": session_db,
         "enabled_toolsets": _resolve_toolsets(cfg),
@@ -990,7 +990,7 @@ def _create_agent(
 
     agent = _AIAgent(**filtered_kwargs)
     # Stash the resolved provider so _run_chat can report it in the done event
-    agent._minions_resolved_provider = resolved_provider
+    agent._agentcontrol_resolved_provider = resolved_provider
     return agent
 
 
@@ -1011,7 +1011,7 @@ def _agent_failure_message(text: str) -> str | None:
 
 
 def _sync_session_identity(agent: Any, session_id: str) -> None:
-    """Refresh persisted Hermes session metadata when Minions switches models."""
+    """Refresh persisted Hermes session metadata when AgentControl switches models."""
     session_db = getattr(agent, "_session_db", None)
     model = string_or_none(getattr(agent, "model", None))
     if not session_db or not session_id or not model:
@@ -1268,7 +1268,7 @@ def _run_chat(request_id: str, request: dict[str, Any]) -> None:
 
         clear_session_vars = _clear_session_vars
         session_tokens = set_session_vars(
-            platform="minions",
+            platform="agentcontrol",
             chat_id=task_id,
             chat_name=task_title,
             session_key=session_id,
@@ -1299,7 +1299,7 @@ def _run_chat(request_id: str, request: dict[str, Any]) -> None:
             "sessionId": getattr(agent, "session_id", None) or session_id,
             "interrupted": True,
             "model": string_or_none(getattr(agent, "model", None)),
-            "provider": string_or_none(getattr(agent, "_minions_resolved_provider", None)),
+            "provider": string_or_none(getattr(agent, "_agentcontrol_resolved_provider", None)),
         })
         return
 
@@ -1328,7 +1328,7 @@ def _run_chat(request_id: str, request: dict[str, Any]) -> None:
         "sessionId": getattr(agent, "session_id", None) or session_id,
         "context": context,
         "model": string_or_none(getattr(agent, "model", None)),
-        "provider": string_or_none(getattr(agent, "_minions_resolved_provider", None)),
+        "provider": string_or_none(getattr(agent, "_agentcontrol_resolved_provider", None)),
     })
 
 
@@ -1357,7 +1357,7 @@ def _run_chat_thread(request_id: str, request: dict[str, Any], task_key: str) ->
 def _run_one_shot_agent(label: str, system_message: str, user_message: str) -> str:
     """Run a throwaway zero-reasoning agent turn and return its raw text response."""
     agent = _create_agent(
-        session_id=f"minions-{label}-{uuid.uuid4().hex[:8]}",
+        session_id=f"agentcontrol-{label}-{uuid.uuid4().hex[:8]}",
         requested_model=None,
         reasoning_effort="none",
     )

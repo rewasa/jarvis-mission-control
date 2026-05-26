@@ -51,7 +51,7 @@ import { usePageHeader, type PageHeaderConfig } from './Header';
 import { ModelPicker } from './InputToolbar';
 import { MarkdownContent } from './MarkdownContent';
 
-const DEFAULT_PAUSE_REASON = 'Paused from Minions';
+const DEFAULT_PAUSE_REASON = 'Paused from AgentControl';
 const HERMES_DELIVERY_DOCS = 'https://hermes-agent.nousresearch.com/docs/user-guide/features/cron#delivery-options';
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 const RUN_POLL_INTERVAL_MS = 3000;
@@ -954,7 +954,7 @@ function ScheduledTaskEditorPage({
             </summary>
             <div className="mt-3 space-y-3">
               <FieldLabel label="Workdir">
-                <TextInput mono value={form.workdir} onChange={(workdir) => patch({ workdir })} placeholder="~/.minions/workspace" />
+                <TextInput mono value={form.workdir} onChange={(workdir) => patch({ workdir })} placeholder="~/.agentcontrol/workspace" />
               </FieldLabel>
               <FieldLabel label="Repeat">
                 <SelectInput value={form.repeatMode} onChange={(v) => patch({ repeatMode: v as RepeatMode })}>

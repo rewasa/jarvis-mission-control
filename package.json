@@ -1,11 +1,12 @@
 {
-  "name": "minionsai",
+  "name": "agentcontrol",
   "version": "0.1.14",
-  "description": "Mission Control for Hermes Agent — a Kanban board for autonomous agent tasks",
+  "description": "AgentControl for Hermes Agent — a Kanban board for autonomous agent tasks",
   "license": "MIT",
   "type": "module",
   "bin": {
-    "minions": "bin/minions.mjs"
+    "agentcontrol": "bin/agentcontrol.mjs",
+    "minions": "bin/agentcontrol.mjs"
   },
   "files": [
     "bin",
