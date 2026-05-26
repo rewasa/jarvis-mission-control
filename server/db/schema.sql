@@ -13,4 +13,12 @@ CREATE TABLE IF NOT EXISTS tasks (
   last_context_window_tokens INTEGER
 );
 
+-- Milestone 3: Task hierarchy / subissues columns
+ALTER TABLE tasks ADD COLUMN parent_task_id TEXT REFERENCES tasks(id);
+ALTER TABLE tasks ADD COLUMN priority INTEGER;
+ALTER TABLE tasks ADD COLUMN labels_json TEXT;
+ALTER TABLE tasks ADD COLUMN assignee TEXT;
+ALTER TABLE tasks ADD COLUMN delegation_status TEXT;
+
 CREATE INDEX IF NOT EXISTS idx_tasks_status ON tasks(status);
+CREATE INDEX IF NOT EXISTS idx_tasks_parent_task_id ON tasks(parent_task_id);
