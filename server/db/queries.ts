@@ -7,9 +7,20 @@ import {
   type ContextUsage,
 } from '../../shared/types.js';
 
-const stmtAllTasks = db.prepare('SELECT * FROM tasks ORDER BY updated_at DESC');
-const stmtTasksByStatus = db.prepare('SELECT * FROM tasks WHERE status = ? ORDER BY updated_at DESC');
-const stmtGetTask = db.prepare('SELECT * FROM tasks WHERE id = ?');
+const TASK_SELECT_WITH_CHILD_COUNT = `
+  SELECT
+    tasks.*,
+    (
+      SELECT COUNT(*)
+      FROM tasks AS child_tasks
+      WHERE child_tasks.parent_task_id = tasks.id
+    ) AS child_count
+  FROM tasks
+`;
+
+const stmtAllTasks = db.prepare(`${TASK_SELECT_WITH_CHILD_COUNT} ORDER BY updated_at DESC`);
+const stmtTasksByStatus = db.prepare(`${TASK_SELECT_WITH_CHILD_COUNT} WHERE status = ? ORDER BY updated_at DESC`);
+const stmtGetTask = db.prepare(`${TASK_SELECT_WITH_CHILD_COUNT} WHERE id = ?`);
 const stmtInsertTask = db.prepare(`
   INSERT INTO tasks (
     id, title, description, status, agent_model, reasoning_effort,
