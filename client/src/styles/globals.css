@@ -3,6 +3,19 @@
 @tailwind utilities;
 
 @layer base {
+  *,
+  *::before,
+  *::after {
+    box-sizing: border-box;
+  }
+
+  html,
+  body,
+  #root {
+    max-width: 100%;
+    overflow-x: hidden;
+  }
+
   :root {
     --background: 0 0% 100%;
     --foreground: 240 10% 3.9%;
@@ -42,6 +55,50 @@
     padding-top: env(safe-area-inset-top);
     padding-left: env(safe-area-inset-left);
     padding-right: env(safe-area-inset-right);
+  }
+}
+
+@layer utilities {
+  .mobile-chat-content {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .mobile-chat-content :where(p, li, blockquote, h1, h2, h3, h4, h5, h6, a, span) {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+  }
+
+  .mobile-chat-content :where(pre, code, table) {
+    max-width: 100%;
+  }
+
+  .mobile-chat-content :where(pre, table) {
+    overflow-x: auto;
+  }
+
+  .mobile-chat-content :where(img, video, canvas, svg) {
+    max-width: 100%;
+    height: auto;
+  }
+
+  @media (max-width: 640px) {
+    input,
+    textarea,
+    select {
+      font-size: 16px !important;
+    }
+
+    .mobile-chat-content :where(pre, code) {
+      font-size: 13px;
+      overflow-wrap: anywhere;
+      word-break: break-word;
+      white-space: pre-wrap;
+    }
+
+    .mobile-chat-content :where(pre) {
+      overflow-x: hidden;
+    }
   }
 }
 

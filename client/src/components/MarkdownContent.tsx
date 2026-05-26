@@ -26,14 +26,14 @@ const components: Components = {
 };
 
 const compactMarkdownClassName = [
-  'text-sm leading-relaxed text-zinc-700 dark:text-zinc-300',
+  'mobile-chat-content min-w-0 max-w-full overflow-hidden text-sm leading-relaxed text-zinc-700 dark:text-zinc-300',
   '[&_h1]:mt-4 [&_h1]:mb-2 [&_h1]:text-base',
   '[&_h2]:mt-3 [&_h2]:mb-1.5 [&_h2]:text-sm',
   '[&_h3]:mt-2.5 [&_h3]:mb-1 [&_h3]:text-sm',
   '[&_p]:mb-2 [&_p:last-child]:mb-0',
   '[&_ul]:mb-2 [&_ul:last-child]:mb-0 [&_ol]:mb-2 [&_ol:last-child]:mb-0',
   '[&_blockquote]:my-2',
-  '[&_pre]:text-[13px] [&_code]:text-[13px]',
+  '[&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:text-[13px] [&_code]:text-[13px]',
   '[&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
 ].join(' ');
 

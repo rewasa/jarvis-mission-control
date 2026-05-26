@@ -1,6 +1,6 @@
 {
   "name": "agentcontrol",
-  "version": "0.1.16",
+  "version": "0.1.17",
   "description": "AgentControl for Hermes Agent — a Kanban board for autonomous agent tasks",
   "license": "MIT",
   "type": "module",

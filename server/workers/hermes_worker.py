@@ -930,7 +930,11 @@ def _create_agent(
 
         runtime = resolve_runtime_provider(
             requested=resolved_provider,
-            explicit_base_url=resolved_base_url,
+            explicit_base_url=(
+                resolved_base_url
+                if (resolved_provider or "").startswith("custom:")
+                else None
+            ),
             target_model=resolved_model,
         )
     except Exception as exc:
