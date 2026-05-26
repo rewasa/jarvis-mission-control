@@ -5,7 +5,7 @@ import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
 import { useStore, optimisticMoveTask } from '../lib/store';
 import { toast } from 'sonner';
-import { deleteTask, fetchSubissues, patchTask, moveTask, markTaskViewed } from '../lib/api';
+import { deleteTask, fetchSubissues, fetchTask, patchTask, moveTask, markTaskViewed } from '../lib/api';
 import { DELEGATION_STATUSES, TASK_STATUSES } from '@shared/types';
 import { STATUS_META } from '../lib/constants';
 import { timeAgo } from '../lib/format';
@@ -66,7 +66,7 @@ function SubissuesPanel({ parent, subissues }: { parent: Task; subissues: Task[]
               </div>
               <div className="mt-2 flex items-center justify-between gap-2 text-[11px] text-zinc-500 dark:text-zinc-400">
                 <span>{timeAgo(subissue.updated_at)}</span>
-                <span className="font-semibold text-zinc-700 group-hover:underline dark:text-zinc-200">Chatverlauf öffnen →</span>
+                <span className="font-semibold text-zinc-700 group-hover:underline dark:text-zinc-200">Open chat history →</span>
               </div>
             </Link>
           );
@@ -85,6 +85,7 @@ export function TaskDetailPage() {
   const initialMessage = locationState?.initialMessage;
   const initialSettings = locationState?.initialSettings;
   const task = useStore((s) => s.tasks.find((t) => t.id === taskId) ?? null);
+  const tasks = useStore((s) => s.tasks);
   const tasksLoaded = useStore((s) => s.tasksLoaded);
   const upsertTask = useStore((s) => s.upsertTask);
   const removeTask = useStore((s) => s.removeTask);
@@ -98,7 +99,52 @@ export function TaskDetailPage() {
   const [showMenu, setShowMenu] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const markViewedInFlightRef = useRef<string | null>(null);
+  const [detailFetchInFlight, setDetailFetchInFlight] = useState(false);
+  const [detailFetchFailed, setDetailFetchFailed] = useState(false);
   const titleAnimation = useRenameAnimation(task?.title ?? '', task?.id ?? null);
+
+  useEffect(() => {
+    if (!taskId || task || !tasksLoaded) {
+      setDetailFetchInFlight(false);
+      setDetailFetchFailed(false);
+      return;
+    }
+
+    let cancelled = false;
+    setDetailFetchInFlight(true);
+    setDetailFetchFailed(false);
+
+    fetchTask(taskId)
+      .then(({ task: fetchedTask }) => {
+        if (!cancelled) upsertTask(fetchedTask);
+      })
+      .catch(() => {
+        if (!cancelled) setDetailFetchFailed(true);
+      })
+      .finally(() => {
+        if (!cancelled) setDetailFetchInFlight(false);
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, [taskId, task, tasksLoaded, upsertTask]);
+
+  useEffect(() => {
+    if (!task?.parent_task_id) return;
+    if (tasks.some((candidate) => candidate.id === task.parent_task_id)) return;
+
+    let cancelled = false;
+    fetchTask(task.parent_task_id)
+      .then(({ task: parentTask }) => {
+        if (!cancelled) upsertTask(parentTask);
+      })
+      .catch(() => {});
+
+    return () => {
+      cancelled = true;
+    };
+  }, [task?.parent_task_id, tasks, upsertTask]);
 
   useEffect(() => {
     if (task) setTitleDraft(task.title);
@@ -217,7 +263,7 @@ export function TaskDetailPage() {
   }, [task, removeTask, navigate]);
 
   if (!task) {
-    if (!tasksLoaded) {
+    if (!tasksLoaded || detailFetchInFlight) {
       return (
         <div className="flex-1 flex items-center justify-center">
           <Loader2 size={24} className="animate-spin text-zinc-400" />
@@ -226,14 +272,16 @@ export function TaskDetailPage() {
     }
     return (
       <div className="flex-1 flex items-center justify-center">
-        <p className="text-sm text-zinc-400 dark:text-zinc-500">Task not found</p>
+        <p className="text-sm text-zinc-400 dark:text-zinc-500">
+          {detailFetchFailed ? 'Task not found' : 'Loading task...'}
+        </p>
       </div>
     );
   }
 
   const statusMeta = STATUS_META[task.status];
   const parentTask = task.parent_task_id
-    ? useStore.getState().tasks.find((candidate) => candidate.id === task.parent_task_id) ?? null
+    ? tasks.find((candidate) => candidate.id === task.parent_task_id) ?? null
     : null;
 
   return (

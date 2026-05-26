@@ -74,6 +74,10 @@ export function fetchTasks() {
   return request<{ tasks: Task[] }>('/tasks');
 }
 
+export function fetchTask(id: string) {
+  return request<{ task: Task }>(`/tasks/${id}`);
+}
+
 export function moveTask(id: string, status: TaskStatus) {
   return request<{ task: Task }>(`/tasks/${id}/move`, {
     method: 'POST',
