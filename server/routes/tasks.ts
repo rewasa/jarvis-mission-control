@@ -112,6 +112,14 @@ tasksRouter.get('/:id/subtasks', (req, res) => {
   const parent = getTask(req.params.id);
   if (!parent) return res.status(404).json({ error: 'Task not found' });
 
+  if (parent.hermes_kanban_task_id) {
+    try {
+      syncKanbanChildrenForTask(parent);
+    } catch (err) {
+      console.warn('[kanban-bridge] Automatic child sync skipped:', err instanceof Error ? err.message : err);
+    }
+  }
+
   const subtasks = getSubtasks(req.params.id);
   res.json({ parent, subtasks });
 });
