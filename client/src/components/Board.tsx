@@ -208,7 +208,10 @@ export function Board() {
     >
       <div className="flex flex-1 min-h-0 flex-col">
         <RecurringSummaryStrip scheduledTasks={scheduledTasks} />
-        <div className="flex flex-1 gap-4 overflow-x-auto p-3 min-h-0 sm:gap-6 sm:p-6">
+        <div className="flex flex-1 gap-2 overflow-x-auto p-2 min-h-0 sm:gap-6 sm:p-6
+          snap-x snap-mandatory scroll-smooth
+          [-webkit-overflow-scrolling:touch] [scrollbar-width:none]
+          [&::-webkit-scrollbar]:hidden">
           {TASK_STATUSES.map((status, index) => (
             <Column
               key={status}

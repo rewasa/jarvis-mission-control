@@ -31,9 +31,11 @@ export function Column({ status, tasks, taskRuns, isLast = false, onRequestDelet
   }, []);
 
   return (
-    <div className={`group/column flex flex-col min-w-[272px] max-w-[360px] flex-1 ${
-      isLast ? 'pr-0' : 'border-r border-zinc-200 pr-6 dark:border-zinc-800'
-    }`}>
+    <div className={`group/column flex flex-col shrink-0
+      w-[85vw] sm:min-w-[272px] sm:max-w-[360px] sm:flex-1
+      snap-center
+      ${isLast ? 'sm:pr-0 sm:border-r-0' : 'sm:border-r sm:border-zinc-200 sm:dark:border-zinc-800 sm:pr-6'}
+    `}>
       <div className="flex items-center gap-2 mb-3 pl-1">
         <StatusIcon status={status} />
         <h2 className="text-xs font-medium tracking-wider text-zinc-500 dark:text-zinc-400 uppercase">{label}</h2>
