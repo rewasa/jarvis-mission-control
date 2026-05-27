@@ -1,12 +1,12 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
-import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock, ArrowRight, MessageSquareText, X, Activity, ExternalLink, GitPullRequest, RefreshCw, Bot } from 'lucide-react';
+import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock, ArrowRight, MessageSquareText, X, Activity, ExternalLink, GitPullRequest, RefreshCw, Bot, Link2, Save } from 'lucide-react';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
 import { useStore, optimisticMoveTask } from '../lib/store';
 import { toast } from 'sonner';
-import { deleteTask, fetchSubtasks, fetchTask, fetchTaskKanban, fetchTaskKanbanLogs, fetchTaskGitHubStatus, refreshTaskGitHubStatus, syncTaskKanbanSubtasks, patchTask, moveTask, markTaskViewed, ApiError } from '../lib/api';
+import { deleteTask, fetchSubtasks, fetchTask, fetchTaskKanban, fetchTaskKanbanLogs, fetchTaskGitHubStatus, linkTaskGitHubPr, refreshTaskGitHubStatus, syncTaskKanbanSubtasks, patchTask, moveTask, markTaskViewed, ApiError } from '../lib/api';
 import { DELEGATION_STATUSES, TASK_STATUSES } from '@shared/types';
 import { STATUS_META } from '../lib/constants';
 import { timeAgo } from '../lib/format';
@@ -42,6 +42,7 @@ interface GitHubStatusState {
   checksSummary: string | null;
   checksUpdatedAt: number | null;
   refreshing: boolean;
+  linking: boolean;
   syncError: string | null;
 }
 
@@ -62,121 +63,248 @@ function formatPayload(payload: Record<string, unknown>): string {
   return compact.length > 240 ? `${compact.slice(0, 237)}...` : compact;
 }
 
+function formatKanbanEventLabel(kind: string): string {
+  return kind
+    .replace(/^task\./, '')
+    .replace(/_/g, ' ')
+    .replace(/\b\w/g, (char) => char.toUpperCase());
+}
+
+function payloadPreview(payload: Record<string, unknown>): string | null {
+  const direct = payload.summary ?? payload.message ?? payload.status ?? payload.outcome ?? payload.reason ?? payload.error;
+  if (typeof direct === 'string' && direct.trim()) return direct.trim();
+  if (typeof direct === 'number' || typeof direct === 'boolean') return String(direct);
+  const compact = formatPayload(payload);
+  return compact === '—' ? null : compact;
+}
+
+function shortId(value: string | null | undefined, length = 8): string | null {
+  if (!value) return null;
+  return value.length > length ? value.slice(0, length) : value;
+}
+
 function KanbanPanel({ info, logs }: { info: KanbanTaskResponse | null; logs: KanbanLogsResponse | null }) {
   if (!info?.kanban_id) return null;
   const kanban = info.kanban;
   const latestRun = logs?.runs?.[0] ?? null;
   const latestComment = logs?.comments?.[0] ?? null;
   const eventRows = logs?.logs ?? [];
+  const visibleEvents = eventRows.slice(0, 4);
+  const profile = kanban?.assignee ?? info.delegation_profile;
 
   return (
-    <section className="border-b border-zinc-200 bg-zinc-50/50 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-950/40 sm:px-6">
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-        <span className="inline-flex items-center gap-1.5 font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          <Activity size={13} strokeWidth={2.5} />
-          Hermes Kanban
-        </span>
-        <span className="rounded-md bg-zinc-200 px-1.5 py-0.5 font-mono text-[11px] text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-          {info.kanban_id}
-        </span>
-        {(kanban?.assignee || info.delegation_profile) && (
-          <span className="rounded-md border border-zinc-200 bg-white px-1.5 py-0.5 text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-            Profile: {kanban?.assignee ?? info.delegation_profile}
-          </span>
-        )}
-        {kanban?.status && (
-          <span className="rounded-md border border-amber-200 bg-amber-50 px-1.5 py-0.5 text-[11px] font-semibold text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/30 dark:text-amber-300">
-            {kanban.status}
-          </span>
-        )}
-        {latestRun?.status && <span className="text-[11px] text-zinc-500 dark:text-zinc-400">Run #{latestRun.run_id}: {latestRun.status}</span>}
-      </div>
-      {kanban?.summary && (
-        <p className="mb-2 line-clamp-2 text-xs text-zinc-600 dark:text-zinc-300">{kanban.summary}</p>
-      )}
-      {latestComment && (
-        <p className="mb-2 line-clamp-2 text-xs text-zinc-500 dark:text-zinc-400">
-          Latest comment by {latestComment.author}: {latestComment.body}
-        </p>
-      )}
-      <div className="max-h-28 overflow-y-auto rounded-md border border-zinc-200 bg-white/80 dark:border-zinc-800 dark:bg-zinc-900/70">
-        {eventRows.length > 0 ? eventRows.slice(0, 8).map((entry) => (
-          <div key={entry.log_id} className="border-b border-zinc-100 px-2 py-1.5 text-[11px] last:border-b-0 dark:border-zinc-800">
-            <span className="font-mono font-semibold text-zinc-700 dark:text-zinc-200">{entry.event_kind}</span>
-            {entry.run_id && <span className="ml-1 text-zinc-400">run #{entry.run_id}</span>}
-            <span className="ml-2 font-mono text-zinc-500 dark:text-zinc-400">{formatPayload(entry.payload)}</span>
+    <section className="border-b border-zinc-200 bg-gradient-to-r from-purple-50/80 via-white to-zinc-50 px-3 py-3 dark:border-zinc-800 dark:from-purple-950/20 dark:via-zinc-950 dark:to-zinc-950/70 sm:px-6">
+      <div className="rounded-2xl border border-purple-100 bg-white/85 p-3 shadow-sm shadow-purple-100/50 backdrop-blur dark:border-purple-900/40 dark:bg-zinc-900/70 dark:shadow-black/20">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0 flex-1">
+            <div className="mb-2 flex flex-wrap items-center gap-2">
+              <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-purple-700 dark:border-purple-900/70 dark:bg-purple-950/40 dark:text-purple-300">
+                <Activity size={12} strokeWidth={2.5} />
+                Kanban live
+              </span>
+              <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-mono text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+                {shortId(info.kanban_id, 10)}
+              </span>
+              {profile && (
+                <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                  <Bot size={11} strokeWidth={2.5} />
+                  {profile}
+                </span>
+              )}
+              {kanban?.status && (
+                <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${kanbanStatusTint(kanban.status)}`}>
+                  {kanban.status}
+                </span>
+              )}
+            </div>
+            <p className="line-clamp-2 text-sm leading-5 text-zinc-700 dark:text-zinc-200">
+              {kanban?.summary || kanban?.title || 'Real Hermes Kanban task linked to this AgentControl subtask.'}
+            </p>
+            {latestComment && (
+              <div className="mt-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950/70 dark:text-zinc-300">
+                <span className="font-semibold text-zinc-800 dark:text-zinc-100">Latest comment</span>
+                <span className="ml-1 text-zinc-400">by {latestComment.author}</span>
+                <p className="mt-1 line-clamp-2">{latestComment.body}</p>
+              </div>
+            )}
           </div>
-        )) : (
-          <div className="px-2 py-2 text-[11px] text-zinc-400 dark:text-zinc-500">No Kanban events yet.</div>
-        )}
+
+          <div className="grid min-w-[220px] grid-cols-2 gap-2 text-[11px] lg:w-[260px]">
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
+              <div className="text-zinc-400 dark:text-zinc-500">Run</div>
+              <div className="mt-0.5 truncate font-semibold text-zinc-800 dark:text-zinc-100">
+                {latestRun ? `#${latestRun.run_id} ${latestRun.status}` : 'No run yet'}
+              </div>
+            </div>
+            <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
+              <div className="text-zinc-400 dark:text-zinc-500">Events</div>
+              <div className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-100">{eventRows.length}</div>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          {visibleEvents.length > 0 ? visibleEvents.map((entry) => {
+            const preview = payloadPreview(entry.payload);
+            return (
+              <div key={entry.log_id} className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">{formatKanbanEventLabel(entry.event_kind)}</span>
+                  {entry.run_id && <span className="shrink-0 font-mono text-[10px] text-zinc-400">#{entry.run_id}</span>}
+                </div>
+                {preview && <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-zinc-500 dark:text-zinc-400">{preview}</p>}
+              </div>
+            );
+          }) : (
+            <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-4 text-center text-[11px] text-zinc-400 dark:border-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-500 sm:col-span-2 xl:col-span-4">
+              No Kanban events yet. The linked task is visible; logs appear here as the worker runs.
+            </div>
+          )}
+        </div>
       </div>
     </section>
   );
 }
 
-function GitHubPanel({ status, onRefresh }: { status: GitHubStatusState; onRefresh: () => void }) {
-  if (!status.prNumber && !status.prUrl && !status.checksStatus) return null;
-
+function GitHubPanel({
+  status,
+  onRefresh,
+  prDraft,
+  onPrDraftChange,
+  onLink,
+}: {
+  status: GitHubStatusState;
+  onRefresh: () => void;
+  prDraft: string;
+  onPrDraftChange: (value: string) => void;
+  onLink: (nextPrUrl?: string | null) => void;
+}) {
+  const [showEditor, setShowEditor] = useState(false);
+  const hasGitHub = Boolean(status.prNumber || status.prUrl || status.checksStatus);
   const prStateLabel = status.prState ? (status.prState === 'OPEN' ? 'Open' : status.prState === 'MERGED' ? 'Merged' : 'Closed') : null;
   const checkTint = GITHUB_CHECK_TINTS[status.checksStatus ?? 'unknown'] ?? GITHUB_CHECK_TINTS.unknown;
+  const summary = hasGitHub
+    ? status.checksSummary || 'PR linked and synced.'
+    : 'No PR linked yet.';
+
+  const handleLinkAndClose = () => {
+    onLink();
+    if (prDraft.trim()) setShowEditor(false);
+  };
 
   return (
-    <section className="border-b border-zinc-200 bg-zinc-50/50 px-3 py-3 dark:border-zinc-800 dark:bg-zinc-950/40 sm:px-6">
-      <div className="mb-2 flex flex-wrap items-center gap-2 text-xs">
-        <span className="inline-flex items-center gap-1.5 font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">
-          <GitPullRequest size={13} strokeWidth={2.5} />
-          GitHub
-        </span>
-        {status.prNumber && (
-          <span className="rounded-md bg-zinc-200 px-1.5 py-0.5 font-mono text-[11px] text-zinc-700 dark:bg-zinc-800 dark:text-zinc-200">
-            PR #{status.prNumber}
+    <section className="border-b border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950 sm:px-6">
+      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-900/70">
+        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-300">
+            <GitPullRequest size={12} strokeWidth={2.5} />
+            {status.prNumber ? `PR #${status.prNumber}` : 'GitHub PR'}
           </span>
-        )}
-        {prStateLabel && (
-          <span className="rounded-md border border-zinc-200 bg-white px-1.5 py-0.5 text-[11px] text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
-            {prStateLabel}
-          </span>
-        )}
-        {status.checksStatus && (
-          <span className={`rounded-md border px-1.5 py-0.5 text-[11px] font-semibold ${checkTint}`}>
-            {status.checksStatus}
-          </span>
-        )}
-        {status.refreshing ? (
-          <Loader2 size={12} className="animate-spin text-zinc-400" />
-        ) : (
+          {prStateLabel && (
+            <span className="rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+              {prStateLabel}
+            </span>
+          )}
+          {(status.checksStatus || hasGitHub) && (
+            <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${checkTint}`}>
+              {status.checksStatus ?? 'unknown'}
+            </span>
+          )}
+          {status.headRef && (
+            <span className="truncate font-mono text-[11px] text-zinc-500 dark:text-zinc-400">
+              {status.headRef}{status.headSha ? ` @ ${status.headSha.slice(0, 7)}` : ''}
+            </span>
+          )}
+          <span className="min-w-0 truncate text-[11px] text-zinc-500 dark:text-zinc-400">{summary}</span>
+          {status.syncError && <span className="text-[11px] text-red-500 dark:text-red-400">{status.syncError}</span>}
+        </div>
+
+        <div className="flex items-center gap-1.5">
           <button
             onClick={onRefresh}
+            disabled={status.refreshing}
             title="Refresh GitHub status"
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-zinc-500 transition-colors hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+            className="inline-flex h-7 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
           >
-            <Activity size={11} strokeWidth={2.5} />
+            {status.refreshing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} strokeWidth={2.5} />}
             Sync
           </button>
-        )}
-        {status.prUrl && (
-          <a
-            href={status.prUrl}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[11px] text-zinc-500 transition-colors hover:bg-zinc-200 hover:text-zinc-700 dark:text-zinc-400 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+          {status.prUrl && (
+            <a
+              href={status.prUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="inline-flex h-7 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              <ExternalLink size={12} strokeWidth={2.5} />
+              Open
+            </a>
+          )}
+          <button
+            type="button"
+            onClick={() => setShowEditor(true)}
+            className="inline-flex h-7 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 text-[11px] font-semibold text-blue-700 transition-colors hover:border-blue-300 hover:bg-blue-100 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/70"
           >
-            <ExternalLink size={11} strokeWidth={2.5} />
-            Open
-          </a>
-        )}
+            <Link2 size={12} strokeWidth={2.5} />
+            {hasGitHub ? 'Edit' : 'Link'}
+          </button>
+        </div>
       </div>
-      {status.checksSummary && (
-        <p className="mb-2 text-xs text-zinc-600 dark:text-zinc-300">{status.checksSummary}</p>
-      )}
-      {status.headRef && (
-        <p className="mb-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-          Branch: <span className="font-mono font-semibold">{status.headRef}</span>
-          {status.headSha && <span className="ml-1 font-mono text-zinc-400">({status.headSha.slice(0, 7)})</span>}
-        </p>
-      )}
-      {status.syncError && (
-        <p className="text-[11px] text-red-500 dark:text-red-400">{status.syncError}</p>
+
+      {showEditor && createPortal(
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm" onMouseDown={() => setShowEditor(false)}>
+          <div className="w-full max-w-lg rounded-2xl border border-zinc-200 bg-white p-4 shadow-2xl dark:border-zinc-800 dark:bg-zinc-950" onMouseDown={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Link GitHub PR</h2>
+                <p className="mt-1 text-xs text-zinc-500 dark:text-zinc-400">Paste or clear the PR URL. AgentControl will sync state and checks after saving.</p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowEditor(false)}
+                className="rounded-lg p-1 text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                aria-label="Close GitHub PR editor"
+              >
+                <X size={16} strokeWidth={2.5} />
+              </button>
+            </div>
+            <div className="flex min-w-0 items-center gap-2">
+              <div className="relative min-w-0 flex-1">
+                <Link2 size={13} strokeWidth={2.5} className="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-zinc-400" />
+                <input
+                  value={prDraft}
+                  onChange={(e) => onPrDraftChange(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      handleLinkAndClose();
+                    }
+                  }}
+                  placeholder="https://github.com/owner/repo/pull/123"
+                  className="h-10 w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-8 pr-3 text-sm text-zinc-800 outline-none transition-colors placeholder:text-zinc-400 focus:border-blue-300 focus:bg-white focus:ring-2 focus:ring-blue-100 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-100 dark:focus:border-blue-800 dark:focus:ring-blue-950/50"
+                  autoFocus
+                />
+              </div>
+              <button
+                type="button"
+                onClick={handleLinkAndClose}
+                disabled={status.linking}
+                className="inline-flex h-10 shrink-0 items-center gap-1.5 rounded-xl border border-blue-200 bg-blue-50 px-3 text-xs font-semibold text-blue-700 transition-colors hover:border-blue-300 hover:bg-blue-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/70"
+              >
+                {status.linking ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} strokeWidth={2.5} />}
+                Save
+              </button>
+            </div>
+            <button
+              type="button"
+              onClick={() => { onPrDraftChange(''); onLink(''); setShowEditor(false); }}
+              className="mt-3 text-[11px] font-medium text-zinc-500 transition-colors hover:text-red-600 dark:text-zinc-400 dark:hover:text-red-400"
+            >
+              Clear linked PR
+            </button>
+          </div>
+        </div>,
+        document.body,
       )}
     </section>
   );
@@ -433,7 +561,9 @@ export function TaskDetailPage() {
     checksUpdatedAt: null,
     refreshing: false,
     syncError: null,
+    linking: false,
   });
+  const [prDraft, setPrDraft] = useState('');
   const titleAnimation = useRenameAnimation(task?.title ?? '', task?.id ?? null);
 
   useEffect(() => {
@@ -606,7 +736,9 @@ export function TaskDetailPage() {
       checksStatus: task.github_checks_status ?? prev.checksStatus,
       checksSummary: task.github_checks_summary ?? prev.checksSummary,
       checksUpdatedAt: task.github_checks_updated_at ?? prev.checksUpdatedAt,
+      linking: false,
     }));
+    setPrDraft(task.github_pr_url ?? '');
   }, [task?.github_pr_url, task?.github_pr_number, task?.github_pr_state, task?.github_pr_head_ref, task?.github_pr_head_sha, task?.github_checks_status, task?.github_checks_summary, task?.github_checks_updated_at]);
 
   const handleRefreshGitHub = useCallback(async () => {
@@ -624,8 +756,10 @@ export function TaskDetailPage() {
         checksSummary: data.github_checks_summary ?? null,
         checksUpdatedAt: data.github_checks_updated_at ?? null,
         refreshing: false,
+        linking: false,
         syncError: data.error ?? null,
       });
+      setPrDraft(data.github_pr_url ?? '');
       if (data.github_pr_url || data.github_checks_status) {
         toast('GitHub status synced', {
           icon: <GitPullRequest size={14} strokeWidth={2.5} className="text-zinc-500 dark:text-zinc-400" />,
@@ -635,10 +769,47 @@ export function TaskDetailPage() {
       setGitHubStatus((prev) => ({
         ...prev,
         refreshing: false,
+        linking: false,
         syncError: err instanceof Error ? err.message : 'Sync failed',
       }));
     }
   }, [taskId]);
+
+  const handleLinkGitHubPr = useCallback(async (nextPrUrl?: string | null) => {
+    if (!taskId) return;
+    const trimmed = (nextPrUrl ?? prDraft).trim();
+    setGitHubStatus((prev) => ({ ...prev, linking: true, syncError: null }));
+    try {
+      const data = await linkTaskGitHubPr(taskId, trimmed || null);
+      setGitHubStatus({
+        prUrl: data.github_pr_url ?? null,
+        prNumber: data.github_pr_number ?? null,
+        prState: data.github_pr_state ?? null,
+        headRef: data.github_pr_head_ref ?? null,
+        headSha: data.github_pr_head_sha ?? null,
+        checksStatus: data.github_checks_status ?? null,
+        checksSummary: data.github_checks_summary ?? null,
+        checksUpdatedAt: data.github_checks_updated_at ?? null,
+        refreshing: false,
+        linking: false,
+        syncError: null,
+      });
+      setPrDraft(data.github_pr_url ?? '');
+      toast(trimmed ? 'GitHub PR linked' : 'GitHub PR cleared', {
+        description: data.note,
+        icon: <GitPullRequest size={14} strokeWidth={2.5} className="text-zinc-500 dark:text-zinc-400" />,
+      });
+    } catch (err) {
+      setGitHubStatus((prev) => ({
+        ...prev,
+        linking: false,
+        syncError: err instanceof Error ? err.message : 'Could not link PR',
+      }));
+      toast.error('GitHub PR not linked', {
+        description: err instanceof Error ? err.message : 'Could not link PR',
+      });
+    }
+  }, [taskId, prDraft]);
 
   useEffect(() => {
     if (!showMenu) return;
@@ -907,7 +1078,13 @@ export function TaskDetailPage() {
       </div>
 
       <KanbanPanel info={kanbanInfo} logs={kanbanLogs} />
-      <GitHubPanel status={githubStatus} onRefresh={handleRefreshGitHub} />
+      <GitHubPanel
+        status={githubStatus}
+        onRefresh={handleRefreshGitHub}
+        prDraft={prDraft}
+        onPrDraftChange={setPrDraft}
+        onLink={handleLinkGitHubPr}
+      />
 
       <div className="w-full flex-1 flex flex-row min-h-0">
         <div className="flex-1 flex flex-col min-h-0">

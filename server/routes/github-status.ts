@@ -7,12 +7,26 @@
  */
 
 import { Router } from 'express';
-import { getTask } from '../db/queries.js';
+import { getTask, updateTask } from '../db/queries.js';
 import { mergeLinkedPullRequestForTask } from '../services/github-merge.js';
-import { refreshTaskGitHubStatus } from '../services/github-status.js';
+import { extractGitHubPrRefs, refreshTaskGitHubStatus } from '../services/github-status.js';
 import type { Task } from '../../shared/types.js';
 
 export const githubStatusRouter = Router({ mergeParams: true });
+
+function githubStatusPayload(task: Task) {
+  return {
+    taskId: task.id,
+    github_pr_url: task.github_pr_url,
+    github_pr_number: task.github_pr_number,
+    github_pr_state: task.github_pr_state,
+    github_pr_head_ref: task.github_pr_head_ref,
+    github_pr_head_sha: task.github_pr_head_sha,
+    github_checks_status: task.github_checks_status,
+    github_checks_summary: task.github_checks_summary,
+    github_checks_updated_at: task.github_checks_updated_at,
+  };
+}
 
 /**
  * GET /api/tasks/:id/github
@@ -23,17 +37,7 @@ githubStatusRouter.get('/:id/github', (req, res) => {
     return res.status(404).json({ error: 'Task not found' });
   }
 
-  res.json({
-    taskId: task.id,
-    github_pr_url: task.github_pr_url,
-    github_pr_number: task.github_pr_number,
-    github_pr_state: task.github_pr_state,
-    github_pr_head_ref: task.github_pr_head_ref,
-    github_pr_head_sha: task.github_pr_head_sha,
-    github_checks_status: task.github_checks_status,
-    github_checks_summary: task.github_checks_summary,
-    github_checks_updated_at: task.github_checks_updated_at,
-  });
+  res.json(githubStatusPayload(task));
 });
 
 /**
@@ -50,37 +54,82 @@ githubStatusRouter.post('/:id/github/refresh', async (req, res) => {
 
     if (!updated) {
       return res.json({
-        taskId: task.id,
+        ...githubStatusPayload(task),
         refreshed: false,
         note: 'No PR URL found or fetch failed',
-        github_pr_url: task.github_pr_url,
-        github_pr_number: task.github_pr_number,
-        github_pr_state: task.github_pr_state,
-        github_pr_head_ref: task.github_pr_head_ref,
-        github_pr_head_sha: task.github_pr_head_sha,
         github_checks_status: task.github_checks_status ?? 'unknown',
-        github_checks_summary: task.github_checks_summary ?? null,
-        github_checks_updated_at: task.github_checks_updated_at,
       });
     }
 
     res.json({
-      taskId: updated.id,
+      ...githubStatusPayload(updated),
       refreshed: true,
-      github_pr_url: updated.github_pr_url,
-      github_pr_number: updated.github_pr_number,
-      github_pr_state: updated.github_pr_state,
-      github_pr_head_ref: updated.github_pr_head_ref,
-      github_pr_head_sha: updated.github_pr_head_sha,
-      github_checks_status: updated.github_checks_status,
-      github_checks_summary: updated.github_checks_summary,
-      github_checks_updated_at: updated.github_checks_updated_at,
     });
   } catch (err: unknown) {
     console.error('[github-status] Refresh error:', err);
     res.status(500).json({
       error: err instanceof Error ? err.message : 'GitHub refresh failed',
       github_checks_status: 'unknown',
+    });
+  }
+});
+
+/**
+ * POST /api/tasks/:id/github/link
+ */
+githubStatusRouter.post('/:id/github/link', async (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+
+  const rawPrUrl = typeof req.body?.prUrl === 'string' ? req.body.prUrl.trim() : '';
+  if (!rawPrUrl) {
+    const updated = updateTask(task.id, {
+      github_pr_url: null,
+      github_pr_number: null,
+      github_pr_state: null,
+      github_pr_head_ref: null,
+      github_pr_head_sha: null,
+      github_checks_status: null,
+      github_checks_summary: null,
+      github_checks_updated_at: null,
+    }) ?? task;
+    return res.json({
+      ...githubStatusPayload(updated),
+      linked: false,
+      refreshed: false,
+      note: 'PR link cleared',
+    });
+  }
+
+  const [ref] = extractGitHubPrRefs(rawPrUrl);
+  if (!ref) {
+    return res.status(400).json({ error: 'Expected a GitHub pull request URL like https://github.com/owner/repo/pull/123' });
+  }
+
+  const linked = updateTask(task.id, {
+    github_pr_url: ref.url,
+    github_pr_number: ref.number,
+    github_checks_status: 'unknown',
+    github_checks_summary: 'PR linked manually — sync pending',
+    github_checks_updated_at: Date.now(),
+  }) ?? task;
+
+  try {
+    const refreshed = await refreshTaskGitHubStatus(linked);
+    return res.json({
+      ...githubStatusPayload(refreshed ?? linked),
+      linked: true,
+      refreshed: Boolean(refreshed),
+      note: refreshed ? undefined : 'PR linked; GitHub status refresh unavailable',
+    });
+  } catch {
+    return res.json({
+      ...githubStatusPayload(linked),
+      linked: true,
+      refreshed: false,
+      note: 'PR linked; GitHub status refresh failed',
     });
   }
 });

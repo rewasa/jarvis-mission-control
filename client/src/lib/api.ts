@@ -201,6 +201,13 @@ export function refreshTaskGitHubStatus(taskId: string) {
   });
 }
 
+export function linkTaskGitHubPr(taskId: string, prUrl: string | null) {
+  return request<GitHubStatusResponse & { linked: boolean; refreshed: boolean; note?: string }>(`/tasks/${taskId}/github/link`, {
+    method: 'POST',
+    body: JSON.stringify({ prUrl }),
+  });
+}
+
 export function mergeTaskGitHubPr(taskId: string) {
   return request<GitHubMergeResponse>(`/tasks/${taskId}/github/merge`, {
     method: 'POST',
