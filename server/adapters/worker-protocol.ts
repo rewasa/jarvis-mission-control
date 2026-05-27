@@ -28,6 +28,7 @@ export type WorkerRequest =
   | { id: string; type: 'scheduledTasks.tick' }
   | { id: string; type: 'session.messages.get'; sessionId: string; taskId?: string }
   | { id: string; type: 'session.get'; sessionId: string }
+  | { id: string; type: 'session.message.append'; sessionId: string; role: 'user' | 'assistant' | 'system'; content: string }
   | { id: string; type: 'goal.status'; sessionId: string }
   | { id: string; type: 'goal.set'; sessionId: string; goal: string; maxTurns?: number | null }
   | { id: string; type: 'goal.pause'; sessionId: string; reason?: string }
@@ -83,6 +84,7 @@ export type WorkerResult =
   | { executed: number }
   | { messages: TaskMessage[] }
   | { session: SessionMetadata | null }
+  | { messageId: number; sessionId: string }
   | { goal: GoalStateSnapshot | null }
   | { cleared: boolean }
   | { interrupted: boolean }

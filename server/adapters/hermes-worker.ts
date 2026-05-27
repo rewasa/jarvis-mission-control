@@ -515,6 +515,15 @@ export class HermesWorkerAdapter implements AgentAdapter {
     return result.messages;
   }
 
+  async appendMessage(sessionId: string, role: 'user' | 'assistant' | 'system', content: string): Promise<void> {
+    await this.client.request<{ messageId: number; sessionId: string }>({
+      type: 'session.message.append',
+      sessionId,
+      role,
+      content,
+    });
+  }
+
   async getSessionMetadata(sessionId: string): Promise<SessionMetadata | null> {
     const result = await this.client.request<{ session: SessionMetadata | null }>({
       type: 'session.get',

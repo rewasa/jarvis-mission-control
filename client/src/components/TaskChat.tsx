@@ -499,7 +499,8 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     const messageText = submitWithAttachments(text);
 
     const settings = { model, provider, reasoningEffort, mode: isGoalStreaming ? 'task' : runMode };
-    if (taskBusyForQueue) {
+    const isSteerMessage = /^\/steer(?:\s+|$)/i.test(messageText.trimStart());
+    if (taskBusyForQueue && !isSteerMessage) {
       setQueuedMessage({
         id: crypto.randomUUID(),
         content: messageText,
@@ -713,6 +714,9 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
 
       <div className="border-t border-zinc-100 px-3 py-3 dark:border-zinc-800 sm:px-6 sm:py-4">
         {isGoalStreaming && <GoalRunStatus goal={taskRun?.goal} />}
+        <div className="mb-2 px-1 text-[11px] text-zinc-500 dark:text-zinc-400">
+          Commands: <span className="font-medium text-zinc-600 dark:text-zinc-300">/goal</span>, <span className="font-medium text-zinc-600 dark:text-zinc-300">/queue</span>, <span className="font-medium text-zinc-600 dark:text-zinc-300">/steer</span> — use /steer while a subtask is running.
+        </div>
         <div className={`${CHAT_COLUMN_CLASS} rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800 sm:rounded-2xl`}>
           <textarea
             ref={inputRef}
@@ -721,7 +725,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             disabled={configPending}
-            placeholder={runMode === 'goal' ? GOAL_MODE_PLACEHOLDER : 'Message your assistant...'}
+            placeholder={runMode === 'goal' ? GOAL_MODE_PLACEHOLDER : 'Message your assistant... /queue waits, /steer guides a running subtask'}
             rows={2}
             className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-base leading-relaxed text-zinc-900 placeholder-zinc-400 focus:outline-none disabled:opacity-60 dark:text-zinc-100 dark:placeholder-zinc-500 sm:px-5 sm:text-sm"
           />
