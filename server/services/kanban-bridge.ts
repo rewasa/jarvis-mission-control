@@ -75,6 +75,19 @@ export function getKanbanDbPath(): string {
     : join(root, 'kanban', 'boards', board, 'kanban.db');
 }
 
+export function getKanbanDbPathForBoard(board: string): string {
+  const root = resolveKanbanRoot();
+  return board === 'default'
+    ? join(root, 'kanban.db')
+    : join(root, 'kanban', 'boards', board, 'kanban.db');
+}
+
+function openKanbanDbForBoard(board: string): Database.Database | null {
+  const dbPath = getKanbanDbPathForBoard(board);
+  if (!existsSync(dbPath)) return null;
+  return new Database(dbPath, { readonly: true, fileMustExist: true });
+}
+
 function openKanbanDb(): Database.Database | null {
   const dbPath = getKanbanDbPath();
   if (!existsSync(dbPath)) return null;
@@ -591,4 +604,255 @@ export function syncKanbanChildrenForTask(parentTask: Task): SyncResult {
 
   const subtasks = getSubtasks(parentTask.id);
   return { parent: parentTask, subtasks, imported, updated };
+}
+
+// ── Multi-Board support ────────────────────────────────────────────────
+
+import { readdirSync } from 'node:fs';
+
+export interface BoardSummary {
+  name: string;
+  dbPath: string;
+  taskCount: number;
+  activeTaskCount: number;
+  doneTaskCount: number;
+}
+
+export function listKanbanBoards(): BoardSummary[] {
+  const root = resolveKanbanRoot();
+  const boardsDir = join(root, 'kanban', 'boards');
+  const boards: BoardSummary[] = [];
+
+  // Default board
+  const defaultPath = join(root, 'kanban.db');
+  if (existsSync(defaultPath)) {
+    const conn = new Database(defaultPath, { readonly: true, fileMustExist: true });
+    try {
+      const counts = conn.prepare(`
+        SELECT
+          COUNT(*) as total,
+          SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) as active,
+          SUM(CASE WHEN status IN ('done','archived') THEN 1 ELSE 0 END) as done
+        FROM tasks
+      `).get() as { total: number; active: number; done: number };
+      boards.push({ name: 'default', dbPath: defaultPath, taskCount: counts.total, activeTaskCount: counts.active, doneTaskCount: counts.done });
+    } finally { conn.close(); }
+  }
+
+  // Named boards
+  if (existsSync(boardsDir)) {
+    for (const entry of readdirSync(boardsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory()) continue;
+      const dbPath = join(boardsDir, entry.name, 'kanban.db');
+      if (!existsSync(dbPath)) continue;
+
+      const conn = new Database(dbPath, { readonly: true, fileMustExist: true });
+      try {
+        const counts = conn.prepare(`
+          SELECT
+            COUNT(*) as total,
+            SUM(CASE WHEN status = 'running' THEN 1 ELSE 0 END) as active,
+            SUM(CASE WHEN status IN ('done','archived') THEN 1 ELSE 0 END) as done
+          FROM tasks
+        `).get() as { total: number; active: number; done: number };
+        boards.push({ name: entry.name, dbPath, taskCount: counts.total, activeTaskCount: counts.active, doneTaskCount: counts.done });
+      } finally { conn.close(); }
+    }
+  }
+
+  return boards;
+}
+
+export function getBoardTasks(board: string): KanbanTaskInfo[] {
+  const conn = openKanbanDbForBoard(board);
+  if (!conn) return [];
+
+  try {
+    const rows = conn.prepare(`
+      SELECT t.*,
+        r.id AS latest_run_id, r.status AS latest_run_status,
+        r.outcome, r.summary, r.error, r.profile AS latest_run_profile, r.metadata AS latest_run_metadata
+      FROM tasks t
+      LEFT JOIN task_runs r ON r.id = (
+        SELECT id FROM task_runs WHERE task_id = t.id ORDER BY started_at DESC LIMIT 1
+      )
+      ORDER BY t.created_at DESC
+    `).all() as Array<KanbanTaskRow & {
+      latest_run_id: number | null; latest_run_status: string | null;
+      outcome: string | null; summary: string | null; error: string | null;
+      latest_run_profile: string | null; latest_run_metadata: string | null;
+    }>;
+
+    return rows.map(row => ({
+      kanban_id: row.id,
+      title: row.title,
+      status: row.status,
+      assignee: row.assignee,
+      body: row.body,
+      outcome: row.outcome,
+      summary: row.summary,
+      error: row.error,
+      created_at: row.created_at,
+      started_at: row.started_at,
+      completed_at: row.completed_at,
+      current_run_id: row.current_run_id,
+      latest_run_id: row.latest_run_id,
+      latest_run_status: row.latest_run_status,
+      latest_run_profile: row.latest_run_profile,
+      latest_run_metadata: parseJsonRecord(row.latest_run_metadata),
+    }));
+  } finally { conn.close(); }
+}
+
+export function getBoardTaskInfo(board: string, kanbanId: string): KanbanTaskInfo | null {
+  const conn = openKanbanDbForBoard(board);
+  if (!conn) return null;
+
+  try {
+    const row = conn.prepare(`
+      SELECT t.*,
+        r.id AS latest_run_id, r.status AS latest_run_status,
+        r.outcome, r.summary, r.error, r.profile AS latest_run_profile, r.metadata AS latest_run_metadata
+      FROM tasks t
+      LEFT JOIN task_runs r ON r.id = (
+        SELECT id FROM task_runs WHERE task_id = t.id ORDER BY started_at DESC LIMIT 1
+      )
+      WHERE t.id = ?
+    `).get(kanbanId) as (KanbanTaskRow & {
+      latest_run_id: number | null; latest_run_status: string | null;
+      outcome: string | null; summary: string | null; error: string | null;
+      latest_run_profile: string | null; latest_run_metadata: string | null;
+    }) | undefined;
+
+    if (!row) return null;
+    return {
+      kanban_id: row.id,
+      title: row.title,
+      status: row.status,
+      assignee: row.assignee,
+      body: row.body,
+      outcome: row.outcome,
+      summary: row.summary,
+      error: row.error,
+      created_at: row.created_at,
+      started_at: row.started_at,
+      completed_at: row.completed_at,
+      current_run_id: row.current_run_id,
+      latest_run_id: row.latest_run_id,
+      latest_run_status: row.latest_run_status,
+      latest_run_profile: row.latest_run_profile,
+      latest_run_metadata: parseJsonRecord(row.latest_run_metadata),
+    };
+  } finally { conn.close(); }
+}
+
+export function getBoardKanbanLogs(board: string, kanbanId: string, limit = 50): KanbanLogEntry[] {
+  const conn = openKanbanDbForBoard(board);
+  if (!conn) return [];
+
+  try {
+    const rows = conn.prepare(`
+      SELECT id AS log_id, run_id, kind AS event_kind, payload, created_at
+      FROM task_events WHERE task_id = ? ORDER BY created_at DESC LIMIT ?
+    `).all(kanbanId, clampLimit(limit, 50, 200)) as Array<{
+      log_id: number; run_id: number | null; event_kind: string; payload: string | null; created_at: number;
+    }>;
+
+    return rows.map(row => ({
+      log_id: row.log_id,
+      run_id: row.run_id,
+      event_kind: row.event_kind,
+      payload: parseJsonRecord(row.payload),
+      created_at: row.created_at,
+    }));
+  } finally { conn.close(); }
+}
+
+export function getBoardKanbanRuns(board: string, kanbanId: string, limit = 20): KanbanRunEntry[] {
+  const conn = openKanbanDbForBoard(board);
+  if (!conn) return [];
+
+  try {
+    const rows = conn.prepare(`
+      SELECT id AS run_id, profile, status, outcome, started_at, ended_at, summary, metadata, error, worker_pid
+      FROM task_runs WHERE task_id = ? ORDER BY started_at DESC LIMIT ?
+    `).all(kanbanId, clampLimit(limit, 20, 100)) as Array<{
+      run_id: number; profile: string | null; status: string; outcome: string | null;
+      started_at: number; ended_at: number | null; summary: string | null;
+      metadata: string | null; error: string | null; worker_pid: number | null;
+    }>;
+
+    return rows.map(row => ({
+      run_id: row.run_id,
+      profile: row.profile,
+      status: row.status,
+      outcome: row.outcome,
+      started_at: row.started_at,
+      ended_at: row.ended_at,
+      summary: row.summary,
+      metadata: parseJsonRecord(row.metadata),
+      error: row.error,
+      worker_pid: row.worker_pid,
+    }));
+  } finally { conn.close(); }
+}
+
+export function getBoardKanbanComments(board: string, kanbanId: string, limit = 20): KanbanCommentEntry[] {
+  const conn = openKanbanDbForBoard(board);
+  if (!conn) return [];
+
+  try {
+    return conn.prepare(`
+      SELECT id AS comment_id, author, body, created_at
+      FROM task_comments WHERE task_id = ? ORDER BY created_at DESC LIMIT ?
+    `).all(kanbanId, clampLimit(limit, 20, 100)) as KanbanCommentEntry[];
+  } finally { conn.close(); }
+}
+
+export function getBoardKanbanChildren(board: string, parentKanbanId: string): KanbanTaskInfo[] {
+  const conn = openKanbanDbForBoard(board);
+  if (!conn) return [];
+
+  try {
+    const rows = conn.prepare(`
+      SELECT t.* FROM tasks t
+      INNER JOIN task_links l ON l.child_id = t.id
+      WHERE l.parent_id = ? ORDER BY t.created_at ASC
+    `).all(parentKanbanId) as KanbanTaskRow[];
+    return rows.map(mapTaskRow).filter((task): task is KanbanTaskInfo => task !== null);
+  } finally { conn.close(); }
+}
+
+export function getBoardTaskTranscriptPath(board: string, taskId: string): string | null {
+  const root = resolveKanbanRoot();
+  const logDir = board === 'default'
+    ? join(root, 'kanban', 'logs')
+    : join(root, 'kanban', 'boards', board, 'logs');
+  const logFile = join(logDir, `${taskId}.log`);
+  return existsSync(logFile) ? logFile : null;
+}
+
+// ── Blockers ────────────────────────────────────────────────────────────
+
+export interface BlockerInfo {
+  kanban_id: string;
+  title: string;
+  status: string;
+}
+
+/** Return the tasks that this task is waiting on (direct parents in task_links that are not done/archived). */
+export function getBoardTaskBlockers(board: string, kanbanId: string): BlockerInfo[] {
+  const conn = openKanbanDbForBoard(board);
+  if (!conn) return [];
+
+  try {
+    const rows = conn.prepare(`
+      SELECT t.id AS kanban_id, t.title, t.status
+      FROM tasks t
+      INNER JOIN task_links l ON l.parent_id = t.id
+      WHERE l.child_id = ?
+        AND t.status NOT IN ('done', 'archived')
+    `).all(kanbanId) as BlockerInfo[];
+    return rows;
+  } finally { conn.close(); }
 }

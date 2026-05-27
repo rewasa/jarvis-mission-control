@@ -33,6 +33,10 @@ import type {
   GitHubStatusResponse,
   SubtaskInput,
   SubtaskResponse,
+  KanbanTaskInfo,
+  KanbanLogEntry,
+  KanbanRunEntry,
+  KanbanCommentEntry,
 } from '@shared/types';
 
 export type { SkillMeta, SkillInstallResult };
@@ -413,4 +417,57 @@ export async function uploadChatAttachment(
 function fileRelativePath(file: File): string {
   const relativePath = (file as File & { webkitRelativePath?: string }).webkitRelativePath;
   return relativePath && relativePath.length > 0 ? relativePath : file.name;
+}
+
+// ── Multi-Board Kanban ─────────────────────────────────────────────────
+
+export interface KanbanBoardSummary {
+  name: string;
+  dbPath: string;
+  taskCount: number;
+  activeTaskCount: number;
+  doneTaskCount: number;
+}
+
+export interface KanbanTaskDetail {
+  board: string;
+  task: KanbanTaskInfo;
+}
+
+export interface KanbanLogsDetail {
+  board: string;
+  taskId: string;
+  logs: KanbanLogEntry[];
+  runs: KanbanRunEntry[];
+  comments: KanbanCommentEntry[];
+}
+
+export function fetchKanbanBoards() {
+  return request<{ boards: KanbanBoardSummary[] }>('/kanban/boards');
+}
+
+export function fetchBoardTasks(board: string) {
+  return request<{ board: string; tasks: KanbanTaskInfo[] }>(`/kanban/boards/${encodeURIComponent(board)}/tasks`);
+}
+
+export function fetchBoardTask(board: string, taskId: string) {
+  return request<KanbanTaskDetail>(`/kanban/boards/${encodeURIComponent(board)}/tasks/${encodeURIComponent(taskId)}`);
+}
+
+export function fetchBoardTaskChildren(board: string, taskId: string) {
+  return request<{ board: string; taskId: string; children: KanbanTaskInfo[] }>(
+    `/kanban/boards/${encodeURIComponent(board)}/tasks/${encodeURIComponent(taskId)}/children`,
+  );
+}
+
+export function fetchBoardTaskLogs(board: string, taskId: string, limit = 50) {
+  return request<KanbanLogsDetail>(
+    `/kanban/boards/${encodeURIComponent(board)}/tasks/${encodeURIComponent(taskId)}/logs?limit=${limit}`,
+  );
+}
+
+export async function fetchBoardTaskBlockers(board: string, taskId: string) {
+  return request<{ board: string; taskId: string; blockers: { kanban_id: string; title: string; status: string }[] }>(
+    `/kanban/boards/${encodeURIComponent(board)}/tasks/${encodeURIComponent(taskId)}/blockers`,
+  );
 }

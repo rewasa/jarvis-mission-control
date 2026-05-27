@@ -1,6 +1,6 @@
 import { useEffect } from 'react';
 import { useLocation, useNavigate, Link } from 'react-router-dom';
-import { SquarePen, Columns3, Settings, PanelLeftClose, PanelLeft, Repeat, Sparkles, Folder, TerminalSquare } from 'lucide-react';
+import { SquarePen, Columns3, Settings, PanelLeftClose, PanelLeft, Repeat, Sparkles, Folder, TerminalSquare, KanbanSquare } from 'lucide-react';
 import { useStore } from '../lib/store';
 import { isEditableTarget } from '../lib/keyboard';
 
@@ -117,6 +117,13 @@ export function Sidebar() {
             active={isActive('/')}
             collapsed={desktopCollapsed}
             shortcut={['G', 'T']}
+          />
+          <SidebarLink
+            icon={<KanbanSquare size={18} />}
+            label="Kanban"
+            to="/kanban"
+            active={isActive('/kanban')}
+            collapsed={desktopCollapsed}
           />
           <SidebarLink
             icon={<Repeat size={18} />}
