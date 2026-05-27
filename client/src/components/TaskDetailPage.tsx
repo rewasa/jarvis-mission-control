@@ -93,74 +93,72 @@ function KanbanPanel({ info, logs }: { info: KanbanTaskResponse | null; logs: Ka
   const profile = kanban?.assignee ?? info.delegation_profile;
 
   return (
-    <section className="border-b border-zinc-200 bg-gradient-to-r from-purple-50/80 via-white to-zinc-50 px-3 py-3 dark:border-zinc-800 dark:from-purple-950/20 dark:via-zinc-950 dark:to-zinc-950/70 sm:px-6">
-      <div className="rounded-2xl border border-purple-100 bg-white/85 p-3 shadow-sm shadow-purple-100/50 backdrop-blur dark:border-purple-900/40 dark:bg-zinc-900/70 dark:shadow-black/20">
-        <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0 flex-1">
-            <div className="mb-2 flex flex-wrap items-center gap-2">
-              <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-purple-700 dark:border-purple-900/70 dark:bg-purple-950/40 dark:text-purple-300">
-                <Activity size={12} strokeWidth={2.5} />
-                Kanban live
+    <section className="rounded-2xl border border-purple-100 bg-white/90 p-3 shadow-sm shadow-purple-100/50 backdrop-blur dark:border-purple-900/40 dark:bg-zinc-900/80 dark:shadow-black/20">
+      <div className="flex flex-col gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-purple-700 dark:border-purple-900/70 dark:bg-purple-950/40 dark:text-purple-300">
+              <Activity size={12} strokeWidth={2.5} />
+              Kanban live
+            </span>
+            <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-mono text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+              {shortId(info.kanban_id, 10)}
+            </span>
+            {profile && (
+              <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                <Bot size={11} strokeWidth={2.5} />
+                {profile}
               </span>
-              <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-mono text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-                {shortId(info.kanban_id, 10)}
+            )}
+            {kanban?.status && (
+              <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${kanbanStatusTint(kanban.status)}`}>
+                {kanban.status}
               </span>
-              {profile && (
-                <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                  <Bot size={11} strokeWidth={2.5} />
-                  {profile}
-                </span>
-              )}
-              {kanban?.status && (
-                <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${kanbanStatusTint(kanban.status)}`}>
-                  {kanban.status}
-                </span>
-              )}
-            </div>
-            <p className="line-clamp-2 text-sm leading-5 text-zinc-700 dark:text-zinc-200">
-              {kanban?.summary || kanban?.title || 'Real Hermes Kanban task linked to this AgentControl subtask.'}
-            </p>
-            {latestComment && (
-              <div className="mt-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950/70 dark:text-zinc-300">
-                <span className="font-semibold text-zinc-800 dark:text-zinc-100">Latest comment</span>
-                <span className="ml-1 text-zinc-400">by {latestComment.author}</span>
-                <p className="mt-1 line-clamp-2">{latestComment.body}</p>
-              </div>
             )}
           </div>
-
-          <div className="grid min-w-[220px] grid-cols-2 gap-2 text-[11px] lg:w-[260px]">
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
-              <div className="text-zinc-400 dark:text-zinc-500">Run</div>
-              <div className="mt-0.5 truncate font-semibold text-zinc-800 dark:text-zinc-100">
-                {latestRun ? `#${latestRun.run_id} ${latestRun.status}` : 'No run yet'}
-              </div>
-            </div>
-            <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
-              <div className="text-zinc-400 dark:text-zinc-500">Events</div>
-              <div className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-100">{eventRows.length}</div>
-            </div>
-          </div>
-        </div>
-
-        <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-          {visibleEvents.length > 0 ? visibleEvents.map((entry) => {
-            const preview = payloadPreview(entry.payload);
-            return (
-              <div key={entry.log_id} className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="truncate text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">{formatKanbanEventLabel(entry.event_kind)}</span>
-                  {entry.run_id && <span className="shrink-0 font-mono text-[10px] text-zinc-400">#{entry.run_id}</span>}
-                </div>
-                {preview && <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-zinc-500 dark:text-zinc-400">{preview}</p>}
-              </div>
-            );
-          }) : (
-            <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-4 text-center text-[11px] text-zinc-400 dark:border-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-500 sm:col-span-2 xl:col-span-4">
-              No Kanban events yet. The linked task is visible; logs appear here as the worker runs.
+          <p className="line-clamp-2 text-sm leading-5 text-zinc-700 dark:text-zinc-200">
+            {kanban?.summary || kanban?.title || 'Real Hermes Kanban task linked to this AgentControl subtask.'}
+          </p>
+          {latestComment && (
+            <div className="mt-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950/70 dark:text-zinc-300">
+              <span className="font-semibold text-zinc-800 dark:text-zinc-100">Latest comment</span>
+              <span className="ml-1 text-zinc-400">by {latestComment.author}</span>
+              <p className="mt-1 line-clamp-2">{latestComment.body}</p>
             </div>
           )}
         </div>
+
+        <div className="grid grid-cols-2 gap-2 text-[11px]">
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
+            <div className="text-zinc-400 dark:text-zinc-500">Run</div>
+            <div className="mt-0.5 truncate font-semibold text-zinc-800 dark:text-zinc-100">
+              {latestRun ? `#${latestRun.run_id} ${latestRun.status}` : 'No run yet'}
+            </div>
+          </div>
+          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
+            <div className="text-zinc-400 dark:text-zinc-500">Events</div>
+            <div className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-100">{eventRows.length}</div>
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-3 grid gap-2">
+        {visibleEvents.length > 0 ? visibleEvents.map((entry) => {
+          const preview = payloadPreview(entry.payload);
+          return (
+            <div key={entry.log_id} className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
+              <div className="flex items-center justify-between gap-2">
+                <span className="truncate text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">{formatKanbanEventLabel(entry.event_kind)}</span>
+                {entry.run_id && <span className="shrink-0 font-mono text-[10px] text-zinc-400">#{entry.run_id}</span>}
+              </div>
+              {preview && <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-zinc-500 dark:text-zinc-400">{preview}</p>}
+            </div>
+          );
+        }) : (
+          <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-4 text-center text-[11px] text-zinc-400 dark:border-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-500">
+            No Kanban events yet. The linked task is visible; logs appear here as the worker runs.
+          </div>
+        )}
       </div>
     </section>
   );
@@ -193,9 +191,9 @@ function GitHubPanel({
   };
 
   return (
-    <section className="border-b border-zinc-200 bg-white px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950 sm:px-6">
-      <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs dark:border-zinc-800 dark:bg-zinc-900/70">
-        <div className="flex min-w-0 flex-1 flex-wrap items-center gap-2">
+    <section className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/80">
+      <div className="flex flex-col gap-3 text-xs">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-300">
             <GitPullRequest size={12} strokeWidth={2.5} />
             {status.prNumber ? `PR #${status.prNumber}` : 'GitHub PR'}
@@ -219,7 +217,7 @@ function GitHubPanel({
           {status.syncError && <span className="text-[11px] text-red-500 dark:text-red-400">{status.syncError}</span>}
         </div>
 
-        <div className="flex items-center gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
           <button
             onClick={onRefresh}
             disabled={status.refreshing}
@@ -328,6 +326,18 @@ function kanbanStatusTint(status: string | null): string {
   }
 }
 
+function sortSubtasksForTriage(subtasks: Task[]): Task[] {
+  const rank = (subtask: Task) => {
+    if (subtask.delegation_status === 'blocked') return 0;
+    if (subtask.delegation_status === 'running') return 1;
+    if (subtask.status === 'in_review' || subtask.delegation_status === 'review') return 2;
+    if (subtask.status === 'todo' || subtask.status === 'in_progress') return 3;
+    if (subtask.status === 'done' || subtask.delegation_status === 'done') return 4;
+    return 5;
+  };
+  return [...subtasks].sort((a, b) => rank(a) - rank(b) || b.updated_at - a.updated_at);
+}
+
 function SubtaskRow({ subtask }: { subtask: Task }) {
   const statusMeta = STATUS_META[subtask.status];
   const kanbanBacked = isKanbanSubtask(subtask);
@@ -398,9 +408,11 @@ function SubtasksSidebar({ subtasks, onSync, syncing }: { subtasks: Task[]; onSy
   const kanbanCount = subtasks.filter(isKanbanSubtask).length;
   const progress = subtasks.length > 0 ? Math.round((doneCount / subtasks.length) * 100) : 0;
 
+  const visibleSubtasks = sortSubtasksForTriage(subtasks);
+
   return (
-    <aside className="hidden w-[360px] shrink-0 flex-col border-l border-zinc-200 bg-gradient-to-b from-zinc-50 to-white dark:border-zinc-800 dark:from-zinc-950 dark:to-zinc-950/80 lg:flex 2xl:w-[400px]">
-      <div className="shrink-0 border-b border-zinc-200 px-4 py-4 dark:border-zinc-800">
+    <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/80">
+      <div className="border-b border-zinc-200 px-4 py-4 dark:border-zinc-800">
         <div className="mb-3 flex items-center gap-3">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-purple-200 bg-purple-50 text-purple-700 shadow-sm dark:border-purple-900/70 dark:bg-purple-950/30 dark:text-purple-300">
             <GitBranch size={16} strokeWidth={2.5} />
@@ -448,14 +460,14 @@ function SubtasksSidebar({ subtasks, onSync, syncing }: { subtasks: Task[]; onSy
           />
         </div>
       </div>
-      <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">
+      <div className="px-4 py-3">
         <div className="flex flex-col gap-2.5">
-          {subtasks.map((subtask) => (
+          {visibleSubtasks.map((subtask) => (
             <SubtaskRow key={subtask.id} subtask={subtask} />
           ))}
         </div>
       </div>
-    </aside>
+    </section>
   );
 }
 
@@ -463,7 +475,7 @@ function SubtasksSlideover({ subtasks, onClose }: { subtasks: Task[]; onClose: (
   const doneCount = subtasks.filter((s) => s.status === 'done').length;
   const runningCount = subtasks.filter((s) => s.delegation_status === 'running').length;
   const blockedCount = subtasks.filter((s) => s.delegation_status === 'blocked').length;
-  const progress = Math.round((doneCount / subtasks.length) * 100);
+  const visibleSubtasks = sortSubtasksForTriage(subtasks);
 
   useEffect(() => {
     function handleKey(e: KeyboardEvent) {
@@ -503,13 +515,13 @@ function SubtasksSlideover({ subtasks, onClose }: { subtasks: Task[]; onClose: (
           <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
             <div
               className="h-full rounded-full bg-emerald-500 transition-[width] duration-300 ease-out dark:bg-emerald-400"
-              style={{ width: `${progress}%` }}
+              style={{ width: `${subtasks.length > 0 ? Math.round((doneCount / subtasks.length) * 100) : 0}%` }}
             />
           </div>
         </div>
         <div className="flex-1 overflow-y-auto overscroll-contain px-4 py-3">
           <div className="flex flex-col gap-2.5">
-            {subtasks.map((subtask) => (
+            {visibleSubtasks.map((subtask) => (
               <SubtaskRow key={subtask.id} subtask={subtask} />
             ))}
           </div>
@@ -1077,26 +1089,48 @@ export function TaskDetailPage() {
         </div>
       </div>
 
-      <KanbanPanel info={kanbanInfo} logs={kanbanLogs} />
-      <GitHubPanel
-        status={githubStatus}
-        onRefresh={handleRefreshGitHub}
-        prDraft={prDraft}
-        onPrDraftChange={setPrDraft}
-        onLink={handleLinkGitHubPr}
-      />
-
-      <div className="w-full flex-1 flex flex-row min-h-0">
-        <div className="flex-1 flex flex-col min-h-0">
+      <div className="grid w-full flex-1 min-h-0 grid-cols-1 border-t border-zinc-200 dark:border-zinc-800 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] 2xl:grid-cols-[minmax(0,1fr)_minmax(380px,460px)]">
+        <section className="flex min-h-0 min-w-0 flex-col bg-white dark:bg-zinc-950">
           <TaskChat taskId={task.id} initialMessage={initialMessage} initialSettings={initialSettings} />
-        </div>
-        {!task.parent_task_id && subtasks.length > 0 && (
-          <SubtasksSidebar
-            subtasks={subtasks}
-            onSync={() => { void refreshSubtasks({ manual: true }); }}
-            syncing={subtasksSyncing}
-          />
-        )}
+        </section>
+
+        <aside className="hidden min-h-0 overflow-y-auto border-l border-zinc-200 bg-gradient-to-b from-zinc-50 to-white p-4 dark:border-zinc-800 dark:from-zinc-950 dark:to-zinc-950/80 lg:block">
+          <div className="mb-3 flex justify-end">
+            {!task.parent_task_id && subtasks.length > 0 && (
+              <button
+                type="button"
+                onClick={() => { void refreshSubtasks({ manual: true }); }}
+                disabled={subtasksSyncing}
+                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 shadow-sm transition-colors hover:border-zinc-300 hover:text-zinc-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:text-zinc-200"
+                title="Sync Hermes Kanban subtasks"
+              >
+                {subtasksSyncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} strokeWidth={2.5} />}
+              </button>
+            )}
+          </div>
+          <div className="flex flex-col gap-3">
+            <KanbanPanel info={kanbanInfo} logs={kanbanLogs} />
+            <GitHubPanel
+              status={githubStatus}
+              onRefresh={handleRefreshGitHub}
+              prDraft={prDraft}
+              onPrDraftChange={setPrDraft}
+              onLink={handleLinkGitHubPr}
+            />
+            {!task.parent_task_id && subtasks.length > 0 && (
+              <SubtasksSidebar
+                subtasks={subtasks}
+                onSync={() => { void refreshSubtasks({ manual: true }); }}
+                syncing={subtasksSyncing}
+              />
+            )}
+            {!kanbanInfo?.kanban_id && !githubStatus.prNumber && !githubStatus.prUrl && (task.parent_task_id || subtasks.length === 0) && (
+              <div className="rounded-2xl border border-dashed border-zinc-200 bg-white/70 px-4 py-8 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-500">
+                No Kanban metadata yet.
+              </div>
+            )}
+          </div>
+        </aside>
       </div>
 
       {showSubtasksSlideover && subtasks.length > 0 && (

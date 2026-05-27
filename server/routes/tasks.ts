@@ -3,7 +3,7 @@ import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewe
 import { broadcast } from '../events.js';
 import { adapter } from '../app.js';
 import { startTaskChatRun } from './chat.js';
-import { createKanbanTask, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, syncKanbanChildrenForTask } from '../services/kanban-bridge.js';
+import { createKanbanTask, ensureKanbanRootTaskForAgentControlTask, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, syncKanbanChildrenForTask } from '../services/kanban-bridge.js';
 import { mergeLinkedPullRequestForTask } from '../services/github-merge.js';
 import { TASK_STATUSES, DELEGATION_STATUSES } from '../../shared/types.js';
 import type { TaskStatus, DelegationStatus } from '../../shared/types.js';
@@ -52,18 +52,49 @@ async function enrichTaskTitle(taskId: string, fallbackTitle: string, descriptio
 }
 
 tasksRouter.post('/', (req, res) => {
-  const { description, title } = req.body;
+  const { description, title, kanban, delegation_profile, github_pr_url, branch } = req.body;
   if (!description || typeof description !== 'string') {
     return res.status(400).json({ error: 'description is required' });
   }
 
   const userTitle = typeof title === 'string' ? title.trim() : '';
   const resolvedTitle = userTitle || generateTitle(description);
-  const task = insertTask({
+  const wantsKanban = kanban !== false;
+  const resolvedProfile = typeof delegation_profile === 'string' && delegation_profile.trim()
+    ? delegation_profile.trim()
+    : 'orchestrator';
+  const resolvedPrUrl = typeof github_pr_url === 'string' && github_pr_url.trim()
+    ? github_pr_url.trim()
+    : null;
+  const resolvedBranch = typeof branch === 'string' && branch.trim()
+    ? branch.trim()
+    : null;
+  let task = insertTask({
     title: resolvedTitle,
     description,
     status: 'todo',
+    delegation_profile: wantsKanban ? resolvedProfile : undefined,
+    assignee: wantsKanban ? resolvedProfile : undefined,
+    external_source: wantsKanban ? 'agentcontrol-kanban-root' : undefined,
   });
+
+  if (resolvedPrUrl) {
+    const updated = updateTask(task.id, { github_pr_url: resolvedPrUrl });
+    if (updated) task = updated;
+  }
+
+  if (wantsKanban) {
+    try {
+      task = ensureKanbanRootTaskForAgentControlTask(task, {
+        defaultAssignee: resolvedProfile,
+        prUrl: resolvedPrUrl,
+        branch: resolvedBranch,
+      });
+    } catch (e) {
+      console.error(`[kanban-bridge] Failed to create Kanban root task for AgentControl task ${task.id}:`, e instanceof Error ? e.message : e);
+    }
+  }
+
   broadcast({ type: 'task_created', task });
   res.status(201).json({ task });
 
@@ -137,6 +168,21 @@ tasksRouter.post('/:id/subtasks', (req, res) => {
   const resolvedDescription = typeof description === 'string' ? description : title;
   const resolvedLabelsJson = Array.isArray(labels) ? JSON.stringify(labels) : null;
 
+  const shouldCreateKanban = delegate || !!parent.hermes_kanban_task_id;
+
+  let parentTask = parent;
+  if (shouldCreateKanban) {
+    try {
+      parentTask = ensureKanbanRootTaskForAgentControlTask(parentTask, {
+        defaultAssignee: parentTask.delegation_profile ?? parentTask.assignee ?? 'orchestrator',
+        prUrl: parentTask.github_pr_url,
+        branch: parentTask.github_pr_head_ref,
+      });
+    } catch (e) {
+      console.error(`[kanban-bridge] Failed to ensure parent Kanban task for ${parentTask.id}:`, e instanceof Error ? e.message : e);
+    }
+  }
+
   const createdSubtask = insertTask({
     title,
     description: resolvedDescription,
@@ -152,7 +198,7 @@ tasksRouter.post('/:id/subtasks', (req, res) => {
 
   let subtask = createdSubtask;
   // Embed parent context in description for delegated subtasks
-  if (delegate && subtask) {
+  if (shouldCreateKanban && subtask) {
     const ctxSuffix = `\n\n---\n*Created from parent task: ${parent.title} (${parent.id})*`;
     const updatedSubtask = updateTask(subtask.id, { description: (subtask.description ?? '') + ctxSuffix });
     if (updatedSubtask) subtask = updatedSubtask;
@@ -164,14 +210,30 @@ tasksRouter.post('/:id/subtasks', (req, res) => {
         resolvedDescription,
         '',
         '---',
-        `AgentControl parent task: ${parent.title} (${parent.id})`,
+        `AgentControl parent task: ${parentTask.title} (${parentTask.id})`,
         `AgentControl subtask id: ${subtask.id}`,
-      ].join('\n');
-      const kanbanId = createKanbanTask(title, kanbanAssignProfile, kanbanBody);
+        parentTask.github_pr_url ? `GitHub PR: ${parentTask.github_pr_url}` : null,
+        parentTask.github_pr_head_ref ? `Shared branch: ${parentTask.github_pr_head_ref}` : null,
+        'Commit final work to the shared PR/worktree associated with the parent AgentControl task.',
+      ].filter(Boolean).join('\n');
+      const kanbanId = createKanbanTask(title, kanbanAssignProfile, kanbanBody, {
+        parentKanbanId: parentTask.hermes_kanban_task_id,
+        workspace: 'worktree',
+        branch: parentTask.github_pr_head_ref || undefined,
+        idempotencyKey: `agentcontrol-subtask:${subtask.id}`,
+      });
       // Persist the mapping in AgentControl DB
       const updatedWithKanban = updateTask(subtask.id, {
         hermes_kanban_task_id: kanbanId,
         delegation_profile: kanbanAssignProfile,
+        github_pr_url: parentTask.github_pr_url,
+        github_pr_number: parentTask.github_pr_number,
+        github_pr_state: parentTask.github_pr_state,
+        github_pr_head_ref: parentTask.github_pr_head_ref,
+        github_pr_head_sha: parentTask.github_pr_head_sha,
+        github_checks_status: parentTask.github_checks_status,
+        github_checks_summary: parentTask.github_checks_summary,
+        github_checks_updated_at: parentTask.github_checks_updated_at,
       });
       if (updatedWithKanban) subtask = updatedWithKanban;
     } catch (e) {

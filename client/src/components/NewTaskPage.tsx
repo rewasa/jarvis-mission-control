@@ -78,7 +78,10 @@ export function NewTaskPage() {
     setUploadError(null);
     try {
       const description = text || pendingFiles.map((f) => f.file.name).join(', ');
-      const { task } = await createTask(description);
+      const { task } = await createTask(description, undefined, {
+        kanban: true,
+        delegation_profile: provider ?? defaults?.provider ?? 'orchestrator',
+      });
       const initialMessage = submitWithAttachments(text);
       navigate(`/tasks/${task.id}`, {
         state: {

@@ -82,6 +82,14 @@ export function insertTask(task: {
   hermes_kanban_task_id?: string | null;
   delegation_profile?: string | null;
   external_source?: string | null;
+  github_pr_url?: string | null;
+  github_pr_number?: number | null;
+  github_pr_state?: string | null;
+  github_pr_head_ref?: string | null;
+  github_pr_head_sha?: string | null;
+  github_checks_status?: string | null;
+  github_checks_summary?: string | null;
+  github_checks_updated_at?: number | null;
 }): Task {
   const id = uuid();
   const now = Date.now();
@@ -107,14 +115,14 @@ export function insertTask(task: {
     hermes_kanban_task_id: task.hermes_kanban_task_id ?? null,
     delegation_profile: task.delegation_profile ?? null,
     external_source: task.external_source ?? null,
-    github_pr_url: null,
-    github_pr_number: null,
-    github_pr_state: null,
-    github_pr_head_ref: null,
-    github_pr_head_sha: null,
-    github_checks_status: null,
-    github_checks_summary: null,
-    github_checks_updated_at: null,
+    github_pr_url: task.github_pr_url ?? null,
+    github_pr_number: task.github_pr_number ?? null,
+    github_pr_state: task.github_pr_state ?? null,
+    github_pr_head_ref: task.github_pr_head_ref ?? null,
+    github_pr_head_sha: task.github_pr_head_sha ?? null,
+    github_checks_status: task.github_checks_status ?? null,
+    github_checks_summary: task.github_checks_summary ?? null,
+    github_checks_updated_at: task.github_checks_updated_at ?? null,
   };
   stmtInsertTask.run(row);
   return row as Task;

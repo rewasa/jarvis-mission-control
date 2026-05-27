@@ -110,10 +110,16 @@ export function markTaskViewed(id: string) {
 export function createTask(
   description: string,
   title?: string,
+  options?: {
+    kanban?: boolean;
+    delegation_profile?: string | null;
+    github_pr_url?: string | null;
+    branch?: string | null;
+  },
 ) {
   return request<{ task: Task }>('/tasks', {
     method: 'POST',
-    body: JSON.stringify({ description, title }),
+    body: JSON.stringify({ description, title, ...options }),
   });
 }
 

@@ -142,22 +142,77 @@ export function createKanbanTask(
   title: string,
   assigneeProfile: string,
   body: string,
+  options?: {
+    parentKanbanId?: string | null;
+    workspace?: string | null;
+    branch?: string | null;
+    idempotencyKey?: string | null;
+    initialStatus?: 'blocked' | 'running' | null;
+  },
 ): string {
-  const stdout = runKanbanCli([
+  const args = [
     'create',
     '--json',
     '--assignee',
     assigneeProfile,
     '--body',
     body,
-    title,
-  ]);
+  ];
+  if (options?.parentKanbanId) args.push('--parent', options.parentKanbanId);
+  if (options?.workspace) args.push('--workspace', options.workspace);
+  if (options?.branch) args.push('--branch', options.branch);
+  if (options?.idempotencyKey) args.push('--idempotency-key', options.idempotencyKey);
+  if (options?.initialStatus) args.push('--initial-status', options.initialStatus);
+  args.push(title);
+
+  const stdout = runKanbanCli(args);
 
   const parsed = JSON.parse(stdout.trim()) as { id?: unknown };
   if (typeof parsed.id !== 'string' || parsed.id.length === 0) {
     throw new Error('Hermes Kanban create did not return a task id');
   }
   return parsed.id;
+}
+
+export function ensureKanbanRootTaskForAgentControlTask(
+  task: Task,
+  options?: {
+    defaultAssignee?: string | null;
+    prUrl?: string | null;
+    branch?: string | null;
+    workspace?: string | null;
+  },
+): Task {
+  if (task.hermes_kanban_task_id) return task;
+
+  const assignee = options?.defaultAssignee?.trim() || task.delegation_profile || task.assignee || 'orchestrator';
+  const body = [
+    task.description ?? task.title,
+    '',
+    '---',
+    `AgentControl task id: ${task.id}`,
+    `AgentControl board: ${KANBAN_BOARD}`,
+    options?.prUrl ? `GitHub PR: ${options.prUrl}` : null,
+    options?.branch ? `Shared branch: ${options.branch}` : null,
+    'All child Kanban tasks should work in the same PR/worktree context and commit their final changes there.',
+  ].filter(Boolean).join('\n');
+
+  const kanbanId = createKanbanTask(task.title, assignee, body, {
+    workspace: options?.workspace || 'worktree',
+    branch: options?.branch || undefined,
+    idempotencyKey: `agentcontrol-root:${task.id}`,
+  });
+
+  const updated = updateTask(task.id, {
+    hermes_kanban_task_id: kanbanId,
+    delegation_profile: assignee,
+    assignee,
+    external_source: 'agentcontrol-kanban-root',
+    ...(options?.prUrl ? { github_pr_url: options.prUrl } : {}),
+  });
+  if (!updated) throw new Error('Could not persist Kanban root mapping');
+  broadcast({ type: 'task_updated', task: updated });
+  return updated;
 }
 
 export function appendKanbanComment(
@@ -469,13 +524,38 @@ export function syncKanbanChildrenForTask(parentTask: Task): SyncResult {
     const mapped = mapKanbanStatus(child.status);
     const profile = extractProfileFromKanban(child);
 
+    const taskUpdates: Partial<Pick<Task,
+      | 'status'
+      | 'delegation_status'
+      | 'delegation_profile'
+      | 'assignee'
+      | 'github_pr_url'
+      | 'github_pr_number'
+      | 'github_pr_state'
+      | 'github_pr_head_ref'
+      | 'github_pr_head_sha'
+      | 'github_checks_status'
+      | 'github_checks_summary'
+      | 'github_checks_updated_at'
+    >> = {
+      status: mapped.status,
+      delegation_status: mapped.delegation_status,
+      delegation_profile: profile,
+      assignee: profile,
+    };
+    if (parentTask.github_pr_url) {
+      taskUpdates.github_pr_url = parentTask.github_pr_url;
+      taskUpdates.github_pr_number = parentTask.github_pr_number;
+      taskUpdates.github_pr_state = parentTask.github_pr_state;
+      taskUpdates.github_pr_head_ref = parentTask.github_pr_head_ref;
+      taskUpdates.github_pr_head_sha = parentTask.github_pr_head_sha;
+      taskUpdates.github_checks_status = parentTask.github_checks_status;
+      taskUpdates.github_checks_summary = parentTask.github_checks_summary;
+      taskUpdates.github_checks_updated_at = parentTask.github_checks_updated_at;
+    }
+
     if (existing) {
-      const result = updateTask(existing.id, {
-        status: mapped.status,
-        delegation_status: mapped.delegation_status,
-        delegation_profile: profile,
-        assignee: profile,
-      });
+      const result = updateTask(existing.id, taskUpdates);
       if (result) {
         updated++;
         broadcast({ type: 'task_updated', task: result });
@@ -496,6 +576,14 @@ export function syncKanbanChildrenForTask(parentTask: Task): SyncResult {
       hermes_kanban_task_id: child.kanban_id,
       delegation_profile: profile,
       external_source: 'hermes-kanban-sync',
+      github_pr_url: taskUpdates.github_pr_url,
+      github_pr_number: taskUpdates.github_pr_number,
+      github_pr_state: taskUpdates.github_pr_state,
+      github_pr_head_ref: taskUpdates.github_pr_head_ref,
+      github_pr_head_sha: taskUpdates.github_pr_head_sha,
+      github_checks_status: taskUpdates.github_checks_status,
+      github_checks_summary: taskUpdates.github_checks_summary,
+      github_checks_updated_at: taskUpdates.github_checks_updated_at,
     });
     broadcast({ type: 'task_created', task: created });
     imported++;

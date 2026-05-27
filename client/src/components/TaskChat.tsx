@@ -9,6 +9,7 @@ import { useFileAttachments } from '../hooks/useFileAttachments';
 import { handleChatKeyDown, toggleRunMode } from '../lib/keyboard';
 import { ApiError, compactTask, interruptTask, type AgentRunSettings } from '../lib/api';
 import { useStore } from '../lib/store';
+import { SLASH_COMMANDS, slashCommandTokens, type SlashCommandDefinition } from '../lib/slashCommands';
 import { GOAL_MODE_PLACEHOLDER, goalTurnLabel, toErrorMessage } from '../lib/format';
 import type { ChatRunMode, GoalStateSnapshot } from '@shared/types';
 
@@ -22,6 +23,7 @@ type QueuedMessage = {
   id: string;
   content: string;
   settings: AgentRunSettings;
+  error?: string | null;
 };
 
 function ThinkingBlock({ content, isLive }: { content: string; isLive: boolean }) {
@@ -204,60 +206,153 @@ function ToolCallBlock({ tool }: { tool: ToolProgressEvent }) {
   );
 }
 
+function CommandSuggestionList({
+  input,
+  selectedIndex,
+  onHover,
+  onSelect,
+}: {
+  input: string;
+  selectedIndex: number;
+  onHover: (index: number) => void;
+  onSelect: (definition: SlashCommandDefinition) => void;
+}) {
+  const trimmedStart = input.trimStart();
+  const query = trimmedStart.slice(1).split(/\s/, 1)[0]?.toLowerCase() ?? '';
+  const suggestions = useMemo(() => {
+    if (!trimmedStart.startsWith('/')) return [];
+    return SLASH_COMMANDS.filter((definition) => {
+      const tokens = slashCommandTokens(definition).map((token) => token.slice(1).toLowerCase());
+      if (!query) return true;
+      return tokens.some((token) => token.startsWith(query) || token.includes(query));
+    }).slice(0, 8);
+  }, [query, trimmedStart]);
+
+  if (suggestions.length === 0) return null;
+
+  const activeSuggestion = suggestions[Math.min(selectedIndex, suggestions.length - 1)] ?? suggestions[0];
+
+  return (
+    <div className="absolute bottom-full left-0 right-0 z-20 mb-2 overflow-hidden rounded-2xl border border-zinc-200 bg-white shadow-2xl dark:border-zinc-700 dark:bg-zinc-900">
+      <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
+        <div className="min-w-0">
+          <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Hermes commands</div>
+          <div className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">↑/↓ auswählen · Tab/Enter einsetzen · Esc schliessen</div>
+        </div>
+        {activeSuggestion && (
+          <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300">
+            {activeSuggestion.category}
+          </span>
+        )}
+      </div>
+      <div className="grid max-h-80 grid-cols-1 overflow-hidden sm:grid-cols-[minmax(0,1fr)_minmax(220px,0.75fr)]">
+        <div className="max-h-80 overflow-y-auto p-1.5">
+          {suggestions.map((definition, index) => {
+            const active = index === Math.min(selectedIndex, suggestions.length - 1);
+            return (
+              <button
+                key={definition.command}
+                type="button"
+                onMouseEnter={() => onHover(index)}
+                onMouseDown={(event) => {
+                  event.preventDefault();
+                  onSelect(definition);
+                }}
+                className={`flex w-full items-start gap-3 rounded-xl px-3 py-2 text-left transition-colors ${active ? 'bg-zinc-100 dark:bg-zinc-800' : 'hover:bg-zinc-50 dark:hover:bg-zinc-800/60'}`}
+              >
+                <span className="mt-0.5 font-mono text-sm font-semibold text-zinc-900 dark:text-zinc-100">{definition.command}</span>
+                <span className="min-w-0 flex-1 truncate text-sm text-zinc-500 dark:text-zinc-400">
+                  {definition.args ?? definition.aliases?.join(', ') ?? definition.category}
+                </span>
+                {definition.agentControl && (
+                  <span className="shrink-0 rounded-full bg-indigo-50 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-indigo-600 dark:bg-indigo-950/50 dark:text-indigo-300">
+                    AC
+                  </span>
+                )}
+              </button>
+            );
+          })}
+        </div>
+        <div className="hidden border-l border-zinc-100 bg-zinc-50/70 p-3 dark:border-zinc-800 dark:bg-zinc-950/30 sm:block">
+          <div className="font-mono text-sm font-semibold text-zinc-900 dark:text-zinc-100">
+            {activeSuggestion.command} {activeSuggestion.args ?? ''}
+          </div>
+          {activeSuggestion.aliases && (
+            <div className="mt-1 text-xs text-zinc-400 dark:text-zinc-500">Aliases: {activeSuggestion.aliases.join(', ')}</div>
+          )}
+          <p className="mt-3 text-sm leading-relaxed text-zinc-600 dark:text-zinc-300">{activeSuggestion.description}</p>
+          {!activeSuggestion.agentControl && (
+            <p className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-2.5 py-2 text-xs leading-relaxed text-amber-800 dark:border-amber-900/60 dark:bg-amber-950/30 dark:text-amber-200">
+              Hermes command reference. AgentControl may send unsupported commands as normal chat text unless a server handler exists.
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
 function QueuedMessageBar({
-  queuedMessage,
-  error,
+  queuedMessages,
   isSending,
   canRetry,
   waitingLabel,
   onRemove,
   onRetry,
 }: {
-  queuedMessage: QueuedMessage;
-  error: string | null;
+  queuedMessages: QueuedMessage[];
   isSending: boolean;
   canRetry: boolean;
   waitingLabel: string;
-  onRemove: () => void;
-  onRetry: () => void;
+  onRemove: (id: string) => void;
+  onRetry: (message: QueuedMessage) => void;
 }) {
-  const statusLabel = isSending ? 'Sending...' : error ?? waitingLabel;
+  const firstError = queuedMessages.find((message) => message.error)?.error ?? null;
+  const statusLabel = isSending ? 'Sending...' : firstError ?? waitingLabel;
 
   return (
     <div className="mx-3 mb-2 rounded-lg border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-700 dark:bg-zinc-900/60 sm:mx-4">
       <div className="flex items-start gap-2">
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 space-y-2">
           <div className="flex items-center gap-2">
             <span className="shrink-0 rounded-md bg-zinc-200 px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-zinc-600 dark:bg-zinc-700 dark:text-zinc-300">
-              Queued
+              Queue ×{queuedMessages.length}
             </span>
-            <span className={`min-w-0 truncate text-xs ${error ? 'text-red-500' : 'text-zinc-500 dark:text-zinc-400'}`}>
+            <span className={`min-w-0 truncate text-xs ${firstError ? 'text-red-500' : 'text-zinc-500 dark:text-zinc-400'}`}>
               {statusLabel}
             </span>
           </div>
-          <p className="mt-1 truncate text-sm text-zinc-700 dark:text-zinc-200">
-            {queuedMessage.content}
-          </p>
+          <div className="space-y-1.5">
+            {queuedMessages.map((queuedMessage, index) => (
+              <div key={queuedMessage.id} className="flex min-w-0 items-center gap-2 rounded-md bg-white/70 px-2 py-1 dark:bg-zinc-950/30">
+                <span className="shrink-0 text-[10px] font-semibold tabular-nums text-zinc-400 dark:text-zinc-500">
+                  {index + 1}
+                </span>
+                <p className="min-w-0 flex-1 truncate text-sm text-zinc-700 dark:text-zinc-200">
+                  {queuedMessage.content}
+                </p>
+                {queuedMessage.error && canRetry && (
+                  <button
+                    type="button"
+                    onClick={() => onRetry(queuedMessage)}
+                    className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
+                  >
+                    Retry
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => onRemove(queuedMessage.id)}
+                  disabled={isSending && index === 0}
+                  aria-label="Remove queued message"
+                  title="Remove queued message"
+                  className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-40 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
+                >
+                  <X size={14} />
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
-        {error && canRetry && (
-          <button
-            type="button"
-            onClick={onRetry}
-            className="shrink-0 rounded-md px-2 py-1 text-xs font-medium text-zinc-700 hover:bg-zinc-200 dark:text-zinc-200 dark:hover:bg-zinc-700"
-          >
-            Retry
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={onRemove}
-          disabled={isSending}
-          aria-label="Remove queued message"
-          title="Remove queued message"
-          className="shrink-0 rounded-md p-1 text-zinc-400 hover:bg-zinc-200 hover:text-zinc-700 disabled:opacity-40 dark:hover:bg-zinc-700 dark:hover:text-zinc-200"
-        >
-          <X size={14} />
-        </button>
       </div>
     </div>
   );
@@ -294,12 +389,12 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   const [compactInFlight, setCompactInFlight] = useState(false);
   const [compactDone, setCompactDone] = useState(false);
   const [compactAfterIndex, setCompactAfterIndex] = useState(-1);
-  const [queuedMessage, setQueuedMessage] = useState<QueuedMessage | null>(null);
-  const [queuedSendError, setQueuedSendError] = useState<string | null>(null);
+  const [queuedMessages, setQueuedMessages] = useState<QueuedMessage[]>([]);
   const [autoSendingQueuedId, setAutoSendingQueuedId] = useState<string | null>(null);
   const [outgoingRevealActive, setOutgoingRevealActive] = useState(false);
   const [interruptInFlight, setInterruptInFlight] = useState(false);
   const [interruptError, setInterruptError] = useState<string | null>(null);
+  const [commandSuggestionIndex, setCommandSuggestionIndex] = useState(0);
   const {
     pendingFiles,
     dragOver,
@@ -333,7 +428,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   const didInitialScrollRef = useRef(false);
   const pendingAutoSendRef = useRef<string | null>(null);
   const pendingRevealRef = useRef(false);
-  const queuedMessageRef = useRef<QueuedMessage | null>(null);
+  const queuedMessagesRef = useRef<QueuedMessage[]>([]);
   const lastGoalStatusRef = useRef<GoalStateSnapshot['status'] | null>(null);
   const runIsStreaming = (taskRun?.kind === 'chat' || taskRun?.kind === 'goal') && taskRun.status === 'streaming';
   const isGoalStreaming = taskRun?.kind === 'goal' && taskRun.status === 'streaming';
@@ -341,7 +436,8 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   const isCompacting = taskRun?.kind === 'compact' && taskRun.status === 'compacting';
   const compactionBlocker = isCompacting || compactInFlight;
   const taskBusyForQueue = isStreaming || compactionBlocker;
-  const queuedIsSending = autoSendingQueuedId === queuedMessage?.id;
+  const queuedIsSending = queuedMessages.some((message) => message.id === autoSendingQueuedId);
+  const hasQueuedMessages = queuedMessages.length > 0;
   const latestUserMessageId = useMemo(() => {
     for (let i = messages.length - 1; i >= 0; i--) {
       if (messages[i].role === 'user') return messages[i].id;
@@ -349,9 +445,29 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     return null;
   }, [messages]);
 
+  const commandSuggestions = useMemo(() => {
+    const trimmedStart = input.trimStart();
+    if (!trimmedStart.startsWith('/')) return [];
+    const query = trimmedStart.slice(1).split(/\s/, 1)[0]?.toLowerCase() ?? '';
+    return SLASH_COMMANDS.filter((definition) => {
+      const tokens = slashCommandTokens(definition).map((token) => token.slice(1).toLowerCase());
+      if (!query) return true;
+      return tokens.some((token) => token.startsWith(query) || token.includes(query));
+    }).slice(0, 8);
+  }, [input]);
+  const showCommandSuggestions = commandSuggestions.length > 0;
+
   useEffect(() => {
-    queuedMessageRef.current = queuedMessage;
-  }, [queuedMessage]);
+    queuedMessagesRef.current = queuedMessages;
+  }, [queuedMessages]);
+
+  useEffect(() => {
+    if (!showCommandSuggestions) {
+      setCommandSuggestionIndex(0);
+      return;
+    }
+    setCommandSuggestionIndex((current) => Math.min(current, commandSuggestions.length - 1));
+  }, [commandSuggestions.length, showCommandSuggestions]);
 
   useEffect(() => {
     const goalStatus = taskRun?.kind === 'goal' ? taskRun.goal?.status ?? null : null;
@@ -359,9 +475,14 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
 
     if (goalCompleted) {
       setRunMode('task');
-      setQueuedMessage((current) => {
-        if (current?.settings.mode !== 'goal') return current;
-        return { ...current, settings: { ...current.settings, mode: 'task' } };
+      setQueuedMessages((current) => {
+        let changed = false;
+        const next = current.map((message) => {
+          if (message.settings.mode !== 'goal') return message;
+          changed = true;
+          return { ...message, settings: { ...message.settings, mode: 'task' as const } };
+        });
+        return changed ? next : current;
       });
     }
 
@@ -375,8 +496,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     setCompactInFlight(false);
     setCompactDone(false);
     setCompactAfterIndex(-1);
-    setQueuedMessage(null);
-    setQueuedSendError(null);
+    setQueuedMessages([]);
     setAutoSendingQueuedId(null);
     setRunMode(startupRef.current.initialSettings?.mode ?? 'task');
     setOutgoingRevealActive(false);
@@ -385,7 +505,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     setUploadError(null);
     clearFiles();
     lastGoalStatusRef.current = null;
-    queuedMessageRef.current = null;
+    queuedMessagesRef.current = [];
     pendingAutoSendRef.current = null;
     pendingRevealRef.current = false;
     didInitialScrollRef.current = false;
@@ -458,15 +578,19 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     pendingRevealRef.current = true;
     setAutoSendingQueuedId(message.id);
     setOutgoingRevealActive(true);
-    setQueuedSendError(null);
+    setQueuedMessages((current) => current.map((item) => (
+      item.id === message.id ? { ...item, error: null } : item
+    )));
 
     const result = await sendMessage(taskId, message.content, message.settings, { appendLocalError: false });
     if (result.ok) {
-      setQueuedMessage((current) => current?.id === message.id ? null : current);
-    } else if (queuedMessageRef.current?.id === message.id) {
+      setQueuedMessages((current) => current.filter((item) => item.id !== message.id));
+    } else if (queuedMessagesRef.current.some((item) => item.id === message.id)) {
       pendingRevealRef.current = false;
       setOutgoingRevealActive(false);
-      setQueuedSendError(result.error);
+      setQueuedMessages((current) => current.map((item) => (
+        item.id === message.id ? { ...item, error: result.error } : item
+      )));
     }
 
     if (pendingAutoSendRef.current === message.id) pendingAutoSendRef.current = null;
@@ -474,9 +598,10 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   }, [sendMessage, taskId]);
 
   useEffect(() => {
-    if (!queuedMessage || taskBusyForQueue || configPending || queuedSendError) return;
-    void sendQueuedMessage(queuedMessage);
-  }, [configPending, queuedMessage, queuedSendError, sendQueuedMessage, taskBusyForQueue]);
+    const nextQueuedMessage = queuedMessages[0];
+    if (!nextQueuedMessage || taskBusyForQueue || configPending || nextQueuedMessage.error) return;
+    void sendQueuedMessage(nextQueuedMessage);
+  }, [configPending, queuedMessages, sendQueuedMessage, taskBusyForQueue]);
 
   useEffect(() => {
     if (!isStreaming) setInterruptInFlight(false);
@@ -494,19 +619,25 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     const text = input.trim();
     const hasFiles = pendingFiles.length > 0;
     if ((!text && !hasFiles) || configPending || uploadBlocksSend) return;
-    if (queuedMessage) return;
 
     const messageText = submitWithAttachments(text);
 
     const settings = { model, provider, reasoningEffort, mode: isGoalStreaming ? 'task' : runMode };
-    const isSteerMessage = /^\/steer(?:\s+|$)/i.test(messageText.trimStart());
-    if (taskBusyForQueue && !isSteerMessage) {
-      setQueuedMessage({
-        id: crypto.randomUUID(),
-        content: messageText,
-        settings,
-      });
-      setQueuedSendError(null);
+    const trimmedMessage = messageText.trimStart();
+    const isSteerMessage = /^\/steer(?:\s+|$)/i.test(trimmedMessage);
+    const forceQueue = /^\/queue(?:\s+|$)/i.test(trimmedMessage);
+    const queueContent = trimmedMessage.replace(/^\/queue(?:\s+|$)/i, '').trim();
+    const shouldQueue = (taskBusyForQueue || forceQueue) && !isSteerMessage;
+    if (shouldQueue) {
+      setQueuedMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          content: queueContent || messageText,
+          settings,
+          error: null,
+        },
+      ]);
       setInput('');
       return;
     }
@@ -518,12 +649,17 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     if (!result.ok && result.conflict) {
       pendingRevealRef.current = false;
       setOutgoingRevealActive(false);
-      // submitWithAttachments already cleared the tray, so restore the full
-      // message (incl. attachment paths) rather than just the typed text —
-      // otherwise attachments are silently dropped on a busy-task conflict.
-      setInput(messageText);
+      setQueuedMessages((current) => [
+        ...current,
+        {
+          id: crypto.randomUUID(),
+          content: queueContent || messageText,
+          settings,
+          error: null,
+        },
+      ]);
     }
-  }, [submitWithAttachments, configPending, uploadBlocksSend, input, pendingFiles, queuedMessage, model, provider, reasoningEffort, runMode, isGoalStreaming, taskBusyForQueue, sendMessage, taskId]);
+  }, [submitWithAttachments, configPending, uploadBlocksSend, input, pendingFiles, model, provider, reasoningEffort, runMode, isGoalStreaming, taskBusyForQueue, sendMessage, taskId]);
 
   const handleCompact = useCallback(async () => {
     if (compactionBlocker || isStreaming) return;
@@ -535,8 +671,10 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
       setCompactAfterIndex(compactedMessages.length);
       setCompactDone(true);
     } catch (error) {
-      if (queuedMessageRef.current) {
-        setQueuedSendError(toErrorMessage(error, 'Compaction failed'));
+      if (queuedMessagesRef.current.length > 0) {
+        setQueuedMessages((current) => current.map((message) => (
+          message.error ? message : { ...message, error: toErrorMessage(error, 'Compaction failed') }
+        )));
       }
       throw error;
     } finally {
@@ -559,19 +697,43 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     }
   }, [interruptInFlight, isStreaming, taskId]);
 
-  const handleRemoveQueuedMessage = useCallback(() => {
-    if (queuedIsSending) return;
-    setQueuedMessage(null);
-    setQueuedSendError(null);
-  }, [queuedIsSending]);
+  const handleRemoveQueuedMessage = useCallback((id: string) => {
+    if (autoSendingQueuedId === id) return;
+    setQueuedMessages((current) => current.filter((message) => message.id !== id));
+  }, [autoSendingQueuedId]);
 
-  const handleRetryQueuedMessage = useCallback(() => {
-    if (!queuedMessage || taskBusyForQueue || configPending || queuedIsSending) return;
-    setQueuedSendError(null);
-    void sendQueuedMessage(queuedMessage);
-  }, [configPending, queuedIsSending, queuedMessage, sendQueuedMessage, taskBusyForQueue]);
+  const handleRetryQueuedMessage = useCallback((message: QueuedMessage) => {
+    if (taskBusyForQueue || configPending || autoSendingQueuedId) return;
+    setQueuedMessages((current) => current.map((item) => (
+      item.id === message.id ? { ...item, error: null } : item
+    )));
+    void sendQueuedMessage({ ...message, error: null });
+  }, [autoSendingQueuedId, configPending, sendQueuedMessage, taskBusyForQueue]);
 
-  const goalToggleDisabled = isStreaming || compactionBlocker || queuedMessage !== null;
+  const applySlashCommand = useCallback((definition: SlashCommandDefinition) => {
+    const trimmedStart = input.trimStart();
+    const leadingWhitespace = input.slice(0, input.length - trimmedStart.length);
+    const commandText = `${definition.command} `;
+    if (!trimmedStart.startsWith('/')) {
+      setInput(`${leadingWhitespace}${commandText}`);
+    } else {
+      setInput(`${leadingWhitespace}${commandText}${trimmedStart.replace(/^\/\S*\s*/, '')}`);
+    }
+    setCommandSuggestionIndex(0);
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  }, [input]);
+
+  const handleSteerClick = useCallback(() => {
+    const text = input.trimStart();
+    if (/^\/steer(?:\s+|$)/i.test(text)) {
+      inputRef.current?.focus();
+      return;
+    }
+    setInput((current) => current.trim().length > 0 ? `/steer ${current.trimStart()}` : '/steer ');
+    window.requestAnimationFrame(() => inputRef.current?.focus());
+  }, [input]);
+
+  const goalToggleDisabled = isStreaming || compactionBlocker || hasQueuedMessages;
   const handleToggleGoalMode = useCallback(() => setRunMode(toggleRunMode), []);
 
   const handleKeyDown = useCallback(
@@ -594,7 +756,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
       }
     : {
         onClick: handleSubmit,
-        disabled: (!input.trim() && pendingFiles.length === 0) || configPending || queuedMessage !== null || uploadBlocksSend,
+        disabled: (!input.trim() && pendingFiles.length === 0) || configPending || uploadBlocksSend,
         label: sendBlockedLabel ?? 'Send message',
         icon: hasUploadingFiles ? <Loader2 size={14} className="animate-spin" /> : <ArrowUp size={14} />,
       };
@@ -714,9 +876,6 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
 
       <div className="border-t border-zinc-100 px-3 py-3 dark:border-zinc-800 sm:px-6 sm:py-4">
         {isGoalStreaming && <GoalRunStatus goal={taskRun?.goal} />}
-        <div className="mb-2 px-1 text-[11px] text-zinc-500 dark:text-zinc-400">
-          Commands: <span className="font-medium text-zinc-600 dark:text-zinc-300">/goal</span>, <span className="font-medium text-zinc-600 dark:text-zinc-300">/queue</span>, <span className="font-medium text-zinc-600 dark:text-zinc-300">/steer</span> — use /steer while a subtask is running.
-        </div>
         <div className={`${CHAT_COLUMN_CLASS} rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800 sm:rounded-2xl`}>
           <textarea
             ref={inputRef}
@@ -725,17 +884,16 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             disabled={configPending}
-            placeholder={runMode === 'goal' ? GOAL_MODE_PLACEHOLDER : 'Message your assistant... /queue waits, /steer guides a running subtask'}
+            placeholder={runMode === 'goal' ? GOAL_MODE_PLACEHOLDER : 'Message your assistant...'}
             rows={2}
             className="w-full resize-none bg-transparent px-4 pt-3 pb-1 text-base leading-relaxed text-zinc-900 placeholder-zinc-400 focus:outline-none disabled:opacity-60 dark:text-zinc-100 dark:placeholder-zinc-500 sm:px-5 sm:text-sm"
           />
           <AttachmentTray files={pendingFiles} onRemove={removeFile} onRetry={retryFile} />
           {uploadError && <UploadErrorBar error={uploadError} onDismiss={() => setUploadError(null)} />}
           {interruptError && <UploadErrorBar error={interruptError} onDismiss={() => setInterruptError(null)} />}
-          {queuedMessage && (
+          {hasQueuedMessages && (
             <QueuedMessageBar
-              queuedMessage={queuedMessage}
-              error={queuedSendError}
+              queuedMessages={queuedMessages}
               isSending={queuedIsSending}
               canRetry={!taskBusyForQueue && !configPending && !queuedIsSending}
               waitingLabel={compactionBlocker ? 'Sends after compaction' : 'Sends after current response'}
@@ -763,13 +921,23 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
                 onRunModeChange={setRunMode}
               />
             </div>
+            <button
+              type="button"
+              onClick={handleSteerClick}
+              disabled={configPending}
+              title="Add /steer command"
+              aria-label="Add /steer command"
+              className="inline-flex h-8 items-center justify-center rounded-lg border border-zinc-200 bg-white px-2.5 text-xs font-semibold text-zinc-600 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700/70"
+            >
+              /steer
+            </button>
             <div className="flex items-center gap-2">
               {context && (
                 <ContextRing
                   context={context}
                   onCompact={handleCompact}
                   compacting={compactionBlocker}
-                  compactDisabled={isStreaming || configPending || queuedMessage !== null}
+                  compactDisabled={isStreaming || configPending || hasQueuedMessages}
                 />
               )}
               <button
