@@ -62,7 +62,7 @@ tasksRouter.post('/', (req, res) => {
   const task = insertTask({
     title: resolvedTitle,
     description,
-    status: 'in_progress',
+    status: 'todo',
   });
   broadcast({ type: 'task_created', task });
   res.status(201).json({ task });
