@@ -1,4 +1,4 @@
-import { createContext, useContext, useLayoutEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState, type Dispatch, type ReactNode, type SetStateAction } from 'react';
 import { Link, useMatch, useLocation } from 'react-router-dom';
 import { ChevronRight } from 'lucide-react';
 import { useStore } from '../lib/store';
@@ -101,6 +101,20 @@ export function Header() {
     title = 'Task';
     showParent = true;
   }
+
+  if (pageHeader) {
+    title = pageHeader.crumbs[pageHeader.crumbs.length - 1]?.label ?? 'AgentControl';
+    truncate = true;
+  }
+
+  useEffect(() => {
+    let raw = title;
+    if (task) {
+      raw = task.title || raw;
+    }
+    const trimmed = raw.length > 80 ? raw.slice(0, 77) + '...' : raw;
+    document.title = trimmed + ' \u00b7 AgentControl';
+  }, [task?.title, task?.id, title, location.pathname]);
 
   if (pageHeader) {
     return (
