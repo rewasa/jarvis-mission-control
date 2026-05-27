@@ -1,5 +1,6 @@
 import { create } from 'zustand';
 import type { Task, TaskRunState, TaskStatus } from '@shared/types';
+import { ApiError } from './api';
 
 interface AppState {
   tasks: Task[];
@@ -177,7 +178,8 @@ export async function optimisticMoveTask(
   try {
     const res = await apiMove(task.id, status);
     upsertTask(res.task);
-  } catch {
+  } catch (error) {
     upsertTask(task);
+    if (error instanceof ApiError) throw error;
   }
 }

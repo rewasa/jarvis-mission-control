@@ -29,6 +29,7 @@ import type {
   ClawHubScanResult,
   KanbanLogsResponse,
   KanbanTaskResponse,
+  GitHubMergeResponse,
   GitHubStatusResponse,
   SubtaskInput,
   SubtaskResponse,
@@ -45,6 +46,7 @@ export class ApiError extends Error {
     message: string,
     public status: number,
     public code?: string,
+    public details?: unknown,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -64,7 +66,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     const body = await res.json().catch(() => ({}));
     const message = isRecord(body) && typeof body.error === 'string' ? body.error : `HTTP ${res.status}`;
     const code = isRecord(body) && typeof body.code === 'string' ? body.code : undefined;
-    throw new ApiError(message, res.status, code);
+    throw new ApiError(message, res.status, code, body);
   }
   return res.json();
 }
@@ -189,6 +191,12 @@ export function fetchTaskGitHubStatus(taskId: string) {
 
 export function refreshTaskGitHubStatus(taskId: string) {
   return request<GitHubStatusResponse & { refreshed: boolean; note?: string; error?: string }>(`/tasks/${taskId}/github/refresh`, {
+    method: 'POST',
+  });
+}
+
+export function mergeTaskGitHubPr(taskId: string) {
+  return request<GitHubMergeResponse>(`/tasks/${taskId}/github/merge`, {
     method: 'POST',
   });
 }

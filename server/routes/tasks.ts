@@ -4,6 +4,7 @@ import { broadcast } from '../events.js';
 import { adapter } from '../app.js';
 import { startTaskChatRun } from './chat.js';
 import { createKanbanTask, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, syncKanbanChildrenForTask } from '../services/kanban-bridge.js';
+import { mergeLinkedPullRequestForTask } from '../services/github-merge.js';
 import { TASK_STATUSES, DELEGATION_STATUSES } from '../../shared/types.js';
 import type { TaskStatus, DelegationStatus } from '../../shared/types.js';
 
@@ -228,10 +229,24 @@ tasksRouter.get('/:id/kanban/logs', (req, res) => {
   res.json({ runs, events, comments });
 });
 
-tasksRouter.post('/:id/move', (req, res) => {
+tasksRouter.post('/:id/move', async (req, res) => {
   const { status } = req.body;
   if (!TASK_STATUSES.includes(status)) {
     return res.status(400).json({ error: `status must be one of: ${TASK_STATUSES.join(', ')}` });
+  }
+
+  const current = getTask(req.params.id);
+  if (!current) return res.status(404).json({ error: 'Task not found' });
+
+  if (status === 'done' && current.status !== 'done') {
+    const mergeResult = await mergeLinkedPullRequestForTask(current);
+    if (mergeResult.status !== 'merged') {
+      return res.status(409).json({
+        error: mergeResult.message,
+        code: mergeResult.status === 'auto_merge_enabled' ? 'PR_MERGE_PENDING' : 'PR_MERGE_BLOCKED',
+        merge: mergeResult,
+      });
+    }
   }
 
   const updated = updateTask(req.params.id, { status });

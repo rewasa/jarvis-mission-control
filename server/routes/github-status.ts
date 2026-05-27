@@ -3,10 +3,12 @@
  *
  * GET  /api/tasks/:id/github  — read current stored GitHub status
  * POST /api/tasks/:id/github/refresh — fetch fresh status from GitHub
+ * POST /api/tasks/:id/github/merge — merge or enable auto-merge for linked PR
  */
 
 import { Router } from 'express';
 import { getTask } from '../db/queries.js';
+import { mergeLinkedPullRequestForTask } from '../services/github-merge.js';
 import { refreshTaskGitHubStatus } from '../services/github-status.js';
 import type { Task } from '../../shared/types.js';
 
@@ -79,6 +81,35 @@ githubStatusRouter.post('/:id/github/refresh', async (req, res) => {
     res.status(500).json({
       error: err instanceof Error ? err.message : 'GitHub refresh failed',
       github_checks_status: 'unknown',
+    });
+  }
+});
+
+/**
+ * POST /api/tasks/:id/github/merge
+ */
+githubStatusRouter.post('/:id/github/merge', async (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) {
+    return res.status(404).json({ error: 'Task not found' });
+  }
+
+  try {
+    const result = await mergeLinkedPullRequestForTask(task);
+    if (result.status === 'blocked') {
+      return res.status(409).json({
+        error: result.message,
+        ...result,
+      });
+    }
+    res.json(result);
+  } catch (err: unknown) {
+    console.error('[github-status] Merge error:', err);
+    res.status(500).json({
+      error: err instanceof Error ? err.message : 'GitHub merge failed',
+      status: 'blocked',
+      merged: false,
+      autoMergeEnabled: false,
     });
   }
 });

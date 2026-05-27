@@ -15,12 +15,13 @@ import type { ScheduledTask, Task, TaskStatus } from '@shared/types';
 import { TASK_STATUSES } from '@shared/types';
 import { STATUS_META } from '../lib/constants';
 import { useStore, optimisticMoveTask } from '../lib/store';
-import { deleteTask, fetchScheduledTasks, moveTask } from '../lib/api';
+import { deleteTask, fetchScheduledTasks, moveTask, ApiError } from '../lib/api';
 import { buildScheduledTaskFixDraft } from '../lib/scheduledTaskFix';
 import { relativeTime } from '../lib/schedule';
 import { Column } from './Column';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { AgentControlCardOverlay } from './AgentControlCard';
+import { toast } from 'sonner';
 
 const dropAnimation = {
   duration: 200,
@@ -147,7 +148,13 @@ export function Board() {
     const task = (active.data.current as { task: Task })?.task;
     if (!task || task.status === targetStatus) return;
 
-    await optimisticMoveTask(task, targetStatus, upsertTask, moveTask);
+    try {
+      await optimisticMoveTask(task, targetStatus, upsertTask, moveTask);
+    } catch (error) {
+      toast.error('Task not completed', {
+        description: error instanceof ApiError ? error.message : 'Linked PR could not be merged.',
+      });
+    }
   }
 
   function handleRequestDeleteAll(status: TaskStatus) {

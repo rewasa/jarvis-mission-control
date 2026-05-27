@@ -328,6 +328,18 @@ export interface GitHubStatusResponse {
   github_checks_updated_at: number | null;
 }
 
+export type GitHubMergeStatus = 'merged' | 'auto_merge_enabled' | 'blocked';
+
+export interface GitHubMergeResponse extends GitHubStatusResponse {
+  status: GitHubMergeStatus;
+  merged: boolean;
+  autoMergeEnabled: boolean;
+  message: string;
+  mergeStateStatus: string | null;
+  mergeable: string | null;
+  baseRefName: string | null;
+}
+
 export interface ScheduledTaskOrigin {
   platform?: string | null;
   chat_id?: string | null;
