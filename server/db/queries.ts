@@ -46,6 +46,7 @@ const stmtDetachSubtasks = db.prepare('UPDATE tasks SET parent_task_id = NULL, u
 const stmtTouchTask = db.prepare('UPDATE tasks SET updated_at = ? WHERE id = ?');
 const stmtGetSubtasks = db.prepare('SELECT * FROM tasks WHERE parent_task_id = ? ORDER BY created_at ASC');
 const stmtSubtaskCount = db.prepare('SELECT COUNT(*) AS count FROM tasks WHERE parent_task_id = ?');
+const stmtGetTaskByKanbanId = db.prepare(`${TASK_SELECT_WITH_CHILD_COUNT} WHERE hermes_kanban_task_id = ?`);
 const stmtMarkTaskViewed = db.prepare(`
   UPDATE tasks
   SET last_viewed_at = last_agent_response_at
@@ -59,6 +60,10 @@ export function getAllTasks(status?: TaskStatus): Task[] {
 
 export function getTask(id: string): Task | undefined {
   return stmtGetTask.get(id) as Task | undefined;
+}
+
+export function getTaskByKanbanId(kanbanTaskId: string): Task | undefined {
+  return stmtGetTaskByKanbanId.get(kanbanTaskId) as Task | undefined;
 }
 
 export function insertTask(task: {
@@ -76,6 +81,7 @@ export function insertTask(task: {
   delegation_status?: string | null;
   hermes_kanban_task_id?: string | null;
   delegation_profile?: string | null;
+  external_source?: string | null;
 }): Task {
   const id = uuid();
   const now = Date.now();
@@ -100,7 +106,7 @@ export function insertTask(task: {
     delegation_status: task.delegation_status ?? null,
     hermes_kanban_task_id: task.hermes_kanban_task_id ?? null,
     delegation_profile: task.delegation_profile ?? null,
-    external_source: (task as Record<string, unknown>).external_source ?? null,
+    external_source: task.external_source ?? null,
     github_pr_url: null,
     github_pr_number: null,
     github_pr_state: null,
