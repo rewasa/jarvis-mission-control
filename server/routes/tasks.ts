@@ -1,8 +1,9 @@
 import { Router } from 'express';
-import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewed, getSubissues, getSubissueCount } from '../db/queries.js';
+import { getAllTasks, getTask, getTaskByKanbanId, insertTask, updateTask, deleteTask, markTaskViewed, getSubissues, getSubissueCount } from '../db/queries.js';
 import { broadcast } from '../events.js';
 import { adapter } from '../app.js';
 import { startTaskChatRun } from './chat.js';
+import { syncKanbanChildrenForTask, getKanbanTaskInfo, getKanbanTaskRuns, getKanbanTaskEvents, getKanbanTaskComments, findKanbanTaskByAgentControlTaskId } from '../services/kanban-bridge.js';
 import { TASK_STATUSES, DELEGATION_STATUSES } from '../../shared/types.js';
 import type { TaskStatus, DelegationStatus } from '../../shared/types.js';
 
@@ -71,7 +72,7 @@ tasksRouter.post('/', (req, res) => {
 });
 
 tasksRouter.patch('/:id', (req, res) => {
-  const allowed = ['title', 'description', 'status', 'priority', 'labels_json', 'assignee', 'delegation_status', 'parent_task_id', 'agent_model', 'reasoning_effort'] as const;
+  const allowed = ['title', 'description', 'status', 'priority', 'labels_json', 'assignee', 'delegation_status', 'parent_task_id', 'agent_model', 'reasoning_effort', 'hermes_kanban_task_id', 'delegation_profile', 'external_source', 'github_pr_url', 'github_pr_number', 'github_pr_state', 'github_pr_head_ref', 'github_pr_head_sha', 'github_checks_status', 'github_checks_summary', 'github_checks_updated_at'] as const;
   const fields: Record<string, unknown> = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) fields[key] = req.body[key];
@@ -169,6 +170,40 @@ tasksRouter.post('/:id/subissues', (req, res) => {
   if (updatedParent) broadcast({ type: 'task_updated', task: updatedParent });
 
   res.status(201).json({ parent: updatedParent ?? parent, subissues: getSubissues(req.params.id), runId });
+});
+
+tasksRouter.post('/:id/kanban/sync', (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+
+  try {
+    const result = syncKanbanChildrenForTask(task);
+    res.json(result);
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Sync failed' });
+  }
+});
+
+tasksRouter.get('/:id/kanban', (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  if (!task.hermes_kanban_task_id) return res.status(404).json({ error: 'Task has no kanban mapping' });
+
+  const info = getKanbanTaskInfo(task.hermes_kanban_task_id);
+  if (!info) return res.status(404).json({ error: 'Kanban task not found' });
+
+  res.json({ kanban: info });
+});
+
+tasksRouter.get('/:id/kanban/logs', (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  if (!task.hermes_kanban_task_id) return res.status(404).json({ error: 'Task has no kanban mapping' });
+
+  const runs = getKanbanTaskRuns(task.hermes_kanban_task_id);
+  const events = getKanbanTaskEvents(task.hermes_kanban_task_id);
+  const comments = getKanbanTaskComments(task.hermes_kanban_task_id);
+  res.json({ runs, events, comments });
 });
 
 tasksRouter.post('/:id/move', (req, res) => {

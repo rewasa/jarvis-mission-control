@@ -7,6 +7,8 @@ import { createAgentRouter, createTaskAgentSettingsRouter } from './routes/agent
 import { createScheduledTasksRouter } from './routes/scheduled-tasks.js';
 import { skillsRouter } from './routes/skills.js';
 import { filesRouter } from './routes/files.js';
+import { githubWebhookRouter } from './routes/github-webhook.js';
+import { integrationsRouter } from './routes/integrations.js';
 import { HermesWorkerAdapter } from './adapters/hermes-worker.js';
 import { initSSE, addClient, sendEvent } from './events.js';
 import { getRunStatuses } from './live-chat.js';
@@ -43,6 +45,8 @@ app.use('/api/tasks', chatRouter);
 app.use('/api/agent', createAgentRouter(adapter));
 app.use('/api/scheduled-tasks', createScheduledTasksRouter(adapter));
 app.use('/api/skills', skillsRouter);
+app.use('/api/github', githubWebhookRouter);
+app.use('/api/integrations', integrationsRouter);
 
 app.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
   if (!res.headersSent && error && typeof error === 'object' && (error as { type?: string }).type === 'entity.too.large') {
