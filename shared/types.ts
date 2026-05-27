@@ -59,6 +59,21 @@ export interface Task {
   delegation_status: DelegationStatus | null;
   /** Computed: count of direct child subissues. Not stored in DB. */
   child_count?: number;
+  /** Mapping to Hermes Kanban task id (nullable). */
+  hermes_kanban_task_id: string | null;
+  /** The Hermes profile assigned to the linked Kanban task (nullable). */
+  delegation_profile: string | null;
+  /** Source marker: 'agentcontrol' or 'hermes-kanban-sync' (nullable). */
+  external_source: string | null;
+  /** GitHub PR tracking fields */
+  github_pr_url: string | null;
+  github_pr_number: number | null;
+  github_pr_state: string | null;
+  github_pr_head_ref: string | null;
+  github_pr_head_sha: string | null;
+  github_checks_status: string | null;
+  github_checks_summary: string | null;
+  github_checks_updated_at: number | null;
 }
 
 export interface TaskMessage {
