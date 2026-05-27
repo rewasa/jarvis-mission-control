@@ -72,7 +72,7 @@ tasksRouter.post('/', (req, res) => {
 });
 
 tasksRouter.patch('/:id', (req, res) => {
-  const allowed = ['title', 'description', 'status', 'priority', 'labels_json', 'assignee', 'delegation_status', 'parent_task_id', 'agent_model', 'reasoning_effort'] as const;
+  const allowed = ['title', 'description', 'status', 'priority', 'labels_json', 'assignee', 'delegation_status', 'parent_task_id', 'agent_model', 'reasoning_effort', 'hermes_kanban_task_id', 'delegation_profile', 'external_source', 'github_pr_url', 'github_pr_number', 'github_pr_state', 'github_pr_head_ref', 'github_pr_head_sha', 'github_checks_status', 'github_checks_summary', 'github_checks_updated_at'] as const;
   const fields: Record<string, unknown> = {};
   for (const key of allowed) {
     if (req.body[key] !== undefined) fields[key] = req.body[key];

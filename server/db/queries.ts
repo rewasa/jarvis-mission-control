@@ -27,14 +27,18 @@ const stmtInsertTask = db.prepare(`
     created_at, updated_at, last_agent_response_at, last_viewed_at,
     last_context_used_tokens, last_context_window_tokens,
     parent_task_id, priority, labels_json, assignee, delegation_status,
-    hermes_kanban_task_id, delegation_profile
+    hermes_kanban_task_id, delegation_profile, external_source,
+    github_pr_url, github_pr_number, github_pr_state, github_pr_head_ref, github_pr_head_sha,
+    github_checks_status, github_checks_summary, github_checks_updated_at
   )
   VALUES (
     @id, @title, @description, @status, @agent_model, @agent_provider, @reasoning_effort,
     @created_at, @updated_at, @last_agent_response_at, @last_viewed_at,
     @last_context_used_tokens, @last_context_window_tokens,
     @parent_task_id, @priority, @labels_json, @assignee, @delegation_status,
-    @hermes_kanban_task_id, @delegation_profile
+    @hermes_kanban_task_id, @delegation_profile, @external_source,
+    @github_pr_url, @github_pr_number, @github_pr_state, @github_pr_head_ref, @github_pr_head_sha,
+    @github_checks_status, @github_checks_summary, @github_checks_updated_at
   )
 `);
 const stmtDeleteTask = db.prepare('DELETE FROM tasks WHERE id = ?');
@@ -96,6 +100,15 @@ export function insertTask(task: {
     delegation_status: task.delegation_status ?? null,
     hermes_kanban_task_id: task.hermes_kanban_task_id ?? null,
     delegation_profile: task.delegation_profile ?? null,
+    external_source: (task as Record<string, unknown>).external_source ?? null,
+    github_pr_url: null,
+    github_pr_number: null,
+    github_pr_state: null,
+    github_pr_head_ref: null,
+    github_pr_head_sha: null,
+    github_checks_status: null,
+    github_checks_summary: null,
+    github_checks_updated_at: null,
   };
   stmtInsertTask.run(row);
   return row as Task;
@@ -118,6 +131,15 @@ const ALLOWED_UPDATE_FIELDS = new Set<string>([
   'delegation_status',
   'hermes_kanban_task_id',
   'delegation_profile',
+  'external_source',
+  'github_pr_url',
+  'github_pr_number',
+  'github_pr_state',
+  'github_pr_head_ref',
+  'github_pr_head_sha',
+  'github_checks_status',
+  'github_checks_summary',
+  'github_checks_updated_at',
 ]);
 const updateStmtCache = new Map<string, ReturnType<typeof db.prepare>>();
 
@@ -139,6 +161,15 @@ type TaskUpdateFields = Pick<
   | 'delegation_status'
   | 'hermes_kanban_task_id'
   | 'delegation_profile'
+  | 'external_source'
+  | 'github_pr_url'
+  | 'github_pr_number'
+  | 'github_pr_state'
+  | 'github_pr_head_ref'
+  | 'github_pr_head_sha'
+  | 'github_checks_status'
+  | 'github_checks_summary'
+  | 'github_checks_updated_at'
 >;
 
 function getUpdateStmt(fieldKeys: string[]): ReturnType<typeof db.prepare> {

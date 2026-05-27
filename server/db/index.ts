@@ -46,4 +46,15 @@ ensureColumn('tasks', 'agent_provider', 'TEXT');
 ensureColumn('tasks', 'hermes_kanban_task_id', 'TEXT');
 ensureColumn('tasks', 'delegation_profile', 'TEXT');
 
+// Kanban + GitHub sync columns
+ensureColumn('tasks', 'external_source', 'TEXT');
+ensureColumn('tasks', 'github_pr_url', 'TEXT');
+ensureColumn('tasks', 'github_pr_number', 'INTEGER');
+ensureColumn('tasks', 'github_pr_state', 'TEXT');
+ensureColumn('tasks', 'github_pr_head_ref', 'TEXT');
+ensureColumn('tasks', 'github_pr_head_sha', 'TEXT');
+ensureColumn('tasks', 'github_checks_status', 'TEXT');
+ensureColumn('tasks', 'github_checks_summary', 'TEXT');
+ensureColumn('tasks', 'github_checks_updated_at', 'INTEGER');
+
 export default db;
