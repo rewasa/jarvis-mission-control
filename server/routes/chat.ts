@@ -25,6 +25,7 @@ import { taskRunSettings, parseRunSettingsBody } from '../agent-settings.js';
 import { TASK_AGENT_SYSTEM_PROMPT } from '../prompts/task-agent.js';
 import { isRecord, toErrorMessage } from '../errors.js';
 import { collectGitDiffSummary } from '../git-diff-preview.js';
+import { appendKanbanComment } from '../services/kanban-bridge.js';
 import type { StreamEvent, AgentRunOptions } from '../adapters/types.js';
 import { CHAT_RUN_MODES, MINIONS_GOAL_MAX_TURNS, type ChatRunMode, type CompactResult, type ContextUsage, type GoalStateSnapshot, type Task } from '../../shared/types.js';
 
@@ -88,6 +89,7 @@ chatRouter.get('/:id/session', async (req, res) => {
 
 const DONE_SNAPSHOT_TTL_MS = 30_000;
 const ERROR_SNAPSHOT_TTL_MS = 24 * 60 * 60_000;
+const STEER_COMMAND_RE = /^\/steer(?:\s+|$)/i;
 
 function parseChatRunMode(body: unknown): ChatRunMode {
   const record = isRecord(body) ? body : {};
@@ -118,6 +120,41 @@ function recordCompletedAgentRun(taskId: string, context: ContextUsage | null): 
     return updateTask(taskId, { status: 'in_review' });
   }
   return updated;
+}
+
+function stripSteerCommand(content: string): string {
+  return content.replace(STEER_COMMAND_RE, '').trim();
+}
+
+function isSteerCommand(content: string): boolean {
+  return STEER_COMMAND_RE.test(content.trimStart());
+}
+
+function steerSystemMessage(instruction: string): string {
+  return [
+    'Operator steer:',
+    instruction,
+    '',
+    'The instruction above was injected while the task was already running. Apply it as high-priority guidance for the current task. Do not treat it as a new task completion request by itself.',
+  ].join('\n');
+}
+
+async function appendSteerMessage(task: Task, content: string): Promise<void> {
+  const instruction = stripSteerCommand(content);
+  if (!instruction) {
+    throw new Error('Usage: /steer <instruction>');
+  }
+  await adapter.appendMessage(task.id, 'user', steerSystemMessage(instruction));
+  appendUserMessage(task.id, `/steer ${instruction}`);
+  if (task.hermes_kanban_task_id) {
+    appendKanbanComment(
+      task.hermes_kanban_task_id,
+      `Steer queued from AgentControl chat:\n\n${instruction}`,
+      'agentcontrol',
+    );
+  }
+  appendSystemMessage(task.id, `Steer queued: ${instruction}`);
+  broadcastRunSnapshot(task.id);
 }
 
 function taskWithDelegationStatus(task: Task, runStatus: ReturnType<typeof getRunStatus>): Task | undefined {
@@ -376,6 +413,19 @@ chatRouter.post('/:id/messages', async (req, res) => {
   }
 
   const activeRun = getRunStatus(task.id);
+  if (isSteerCommand(content)) {
+    try {
+      await appendSteerMessage(task, content);
+      return res.status(202).json({
+        runId: activeRun?.runId ?? null,
+        steered: true,
+        persisted: true,
+      });
+    } catch (error) {
+      return res.status(400).json({ error: toErrorMessage(error, 'Could not steer task') });
+    }
+  }
+
   if (isTaskRunActive(activeRun)) {
     return res.status(409).json({ error: 'This task already has a message in progress' });
   }

@@ -123,25 +123,10 @@ function mapTaskRow(row: KanbanTaskRow | undefined): KanbanTaskInfo | null {
   };
 }
 
-export function createKanbanTask(
-  title: string,
-  assigneeProfile: string,
-  body: string,
-): string {
-  const stdout = execFileSync(
+function runKanbanCli(args: string[]): string {
+  return execFileSync(
     'hermes',
-    [
-      'kanban',
-      '--board',
-      KANBAN_BOARD,
-      'create',
-      '--json',
-      '--assignee',
-      assigneeProfile,
-      '--body',
-      body,
-      title,
-    ],
+    ['kanban', '--board', KANBAN_BOARD, ...args],
     {
       encoding: 'utf-8',
       timeout: 30_000,
@@ -151,12 +136,42 @@ export function createKanbanTask(
       },
     },
   );
+}
+
+export function createKanbanTask(
+  title: string,
+  assigneeProfile: string,
+  body: string,
+): string {
+  const stdout = runKanbanCli([
+    'create',
+    '--json',
+    '--assignee',
+    assigneeProfile,
+    '--body',
+    body,
+    title,
+  ]);
 
   const parsed = JSON.parse(stdout.trim()) as { id?: unknown };
   if (typeof parsed.id !== 'string' || parsed.id.length === 0) {
     throw new Error('Hermes Kanban create did not return a task id');
   }
   return parsed.id;
+}
+
+export function appendKanbanComment(
+  kanbanId: string,
+  body: string,
+  author = 'agentcontrol',
+): void {
+  runKanbanCli([
+    'comment',
+    kanbanId,
+    body,
+    '--author',
+    author,
+  ]);
 }
 
 export function getKanbanTaskInfo(kanbanId: string | null): KanbanTaskInfo | null {

@@ -68,6 +68,8 @@ export interface AgentAdapter {
 
   getMessages(sessionId: string, taskId: string): Promise<TaskMessage[]>;
 
+  appendMessage(sessionId: string, role: 'user' | 'assistant' | 'system', content: string): Promise<void>;
+
   getSessionMetadata(sessionId: string): Promise<SessionMetadata | null>;
 
   generateTitle(description: string): Promise<{ title: string }>;

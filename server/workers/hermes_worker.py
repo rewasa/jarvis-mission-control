@@ -26,6 +26,7 @@ from hermes_worker_utils import (
     truncate_with_ellipsis,
 )
 from hermes_sessions import (
+    append_session_message,
     load_agent_history,
     open_session,
     project_session_messages,
@@ -1599,6 +1600,8 @@ def _handle_request(request: dict[str, Any]) -> None:
             _result(request_id, project_session_messages(request.get("sessionId"), request.get("taskId")))
         elif request_type == "session.get":
             _result(request_id, project_session_metadata(request.get("sessionId")))
+        elif request_type == "session.message.append":
+            _result(request_id, append_session_message(request.get("sessionId"), request.get("role"), request.get("content")))
         elif request_type == "goal.status":
             _result(request_id, _goal_status(request))
         elif request_type == "goal.set":

@@ -151,6 +151,39 @@ def load_agent_history(session_db: Any, session_id: str) -> list[dict[str, Any]]
     return _sanitize_agent_history(history)
 
 
+def append_session_message(session_id: Any, role: Any, content: Any) -> dict[str, Any]:
+    session_id = string_or_none(session_id)
+    role = string_or_none(role)
+    if not session_id:
+        raise WorkerError("Session ID is required.", code="bad_request")
+    if role not in {"user", "assistant", "system"}:
+        raise WorkerError("role must be one of: user, assistant, system", code="bad_request")
+
+    if isinstance(content, str):
+        body = content.strip()
+    elif content is None:
+        body = ""
+    else:
+        body = str(content).strip()
+    if not body:
+        raise WorkerError("content is required.", code="bad_request")
+
+    session_db, live_session_id = open_session(session_id)
+    ensure_session = getattr(session_db, "ensure_session", None)
+    if callable(ensure_session):
+        ensure_session(live_session_id, "agentcontrol")
+    elif not session_db.get_session(live_session_id):
+        session_db.create_session(live_session_id, "agentcontrol")
+
+    message_id = session_db.append_message(
+        live_session_id,
+        role,
+        body,
+        observed=True,
+    )
+    return {"messageId": message_id, "sessionId": live_session_id}
+
+
 def _content_to_text(content: Any) -> str:
     if isinstance(content, str):
         return content
