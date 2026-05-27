@@ -218,6 +218,7 @@ function CommandSuggestionList({
   onSelect: (definition: SlashCommandDefinition) => void;
 }) {
   const trimmedStart = input.trimStart();
+  if (/^\/\S+\s/.test(trimmedStart)) return null;
   const query = trimmedStart.slice(1).split(/\s/, 1)[0]?.toLowerCase() ?? '';
   const suggestions = useMemo(() => {
     if (!trimmedStart.startsWith('/')) return [];
@@ -447,7 +448,7 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
 
   const commandSuggestions = useMemo(() => {
     const trimmedStart = input.trimStart();
-    if (!trimmedStart.startsWith('/')) return [];
+    if (!trimmedStart.startsWith('/') || /^\/\S+\s/.test(trimmedStart)) return [];
     const query = trimmedStart.slice(1).split(/\s/, 1)[0]?.toLowerCase() ?? '';
     return SLASH_COMMANDS.filter((definition) => {
       const tokens = slashCommandTokens(definition).map((token) => token.slice(1).toLowerCase());
@@ -737,11 +738,37 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
   const handleToggleGoalMode = useCallback(() => setRunMode(toggleRunMode), []);
 
   const handleKeyDown = useCallback(
-    (e: React.KeyboardEvent) => handleChatKeyDown(e, handleSubmit, {
-      onGoalToggle: handleToggleGoalMode,
-      goalToggleDisabled,
-    }),
-    [goalToggleDisabled, handleSubmit, handleToggleGoalMode],
+    (e: React.KeyboardEvent) => {
+      if (showCommandSuggestions) {
+        if (e.key === 'ArrowDown') {
+          e.preventDefault();
+          setCommandSuggestionIndex((current) => (current + 1) % commandSuggestions.length);
+          return;
+        }
+        if (e.key === 'ArrowUp') {
+          e.preventDefault();
+          setCommandSuggestionIndex((current) => (current - 1 + commandSuggestions.length) % commandSuggestions.length);
+          return;
+        }
+        if (e.key === 'Tab') {
+          e.preventDefault();
+          applySlashCommand(commandSuggestions[commandSuggestionIndex] ?? commandSuggestions[0]);
+          return;
+        }
+        if (e.key === 'Escape') {
+          e.preventDefault();
+          setInput((current) => current.startsWith('/') ? '' : current);
+          setCommandSuggestionIndex(0);
+          return;
+        }
+      }
+
+      handleChatKeyDown(e, handleSubmit, {
+        onGoalToggle: handleToggleGoalMode,
+        goalToggleDisabled,
+      });
+    },
+    [applySlashCommand, commandSuggestionIndex, commandSuggestions, goalToggleDisabled, handleSubmit, handleToggleGoalMode, showCommandSuggestions],
   );
   const isLoadingMessages = loadedTaskId !== taskId;
 
@@ -876,7 +903,13 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
 
       <div className="border-t border-zinc-100 px-3 py-3 dark:border-zinc-800 sm:px-6 sm:py-4">
         {isGoalStreaming && <GoalRunStatus goal={taskRun?.goal} />}
-        <div className={`${CHAT_COLUMN_CLASS} rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800 sm:rounded-2xl`}>
+        <div className={`${CHAT_COLUMN_CLASS} relative rounded-xl border border-zinc-200 bg-white dark:border-zinc-700 dark:bg-zinc-800 sm:rounded-2xl`}>
+          <CommandSuggestionList
+            input={input}
+            selectedIndex={commandSuggestionIndex}
+            onHover={setCommandSuggestionIndex}
+            onSelect={applySlashCommand}
+          />
           <textarea
             ref={inputRef}
             value={input}
