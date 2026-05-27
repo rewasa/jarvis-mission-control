@@ -6,7 +6,7 @@ import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
 import { useStore, optimisticMoveTask } from '../lib/store';
 import { toast } from 'sonner';
-import { deleteTask, fetchSubtasks, fetchTask, fetchTaskKanban, fetchTaskKanbanLogs, fetchTaskGitHubStatus, refreshTaskGitHubStatus, patchTask, moveTask, markTaskViewed } from '../lib/api';
+import { deleteTask, fetchSubtasks, fetchTask, fetchTaskKanban, fetchTaskKanbanLogs, fetchTaskGitHubStatus, refreshTaskGitHubStatus, patchTask, moveTask, markTaskViewed, ApiError } from '../lib/api';
 import { DELEGATION_STATUSES, TASK_STATUSES } from '@shared/types';
 import { STATUS_META } from '../lib/constants';
 import { timeAgo } from '../lib/format';
@@ -561,7 +561,14 @@ export function TaskDetailPage() {
     if (status === 'done') {
       const previousStatus = task.status;
       const taskId = task.id;
-      optimisticMoveTask(task, 'done', upsertTask, moveTask);
+      try {
+        await optimisticMoveTask(task, 'done', upsertTask, moveTask);
+      } catch (error) {
+        toast.error('Task not completed', {
+          description: error instanceof ApiError ? error.message : 'Linked PR could not be merged.',
+        });
+        return;
+      }
       navigate('/');
       toast('Task completed', {
         icon: <Check size={14} strokeWidth={2.5} className="text-zinc-500 dark:text-zinc-400" />,
@@ -575,7 +582,13 @@ export function TaskDetailPage() {
         },
       });
     } else {
-      await optimisticMoveTask(task, status, upsertTask, moveTask);
+      try {
+        await optimisticMoveTask(task, status, upsertTask, moveTask);
+      } catch (error) {
+        toast.error('Task not moved', {
+          description: error instanceof ApiError ? error.message : 'Linked PR could not be merged.',
+        });
+      }
     }
   }, [task, upsertTask, navigate]);
 

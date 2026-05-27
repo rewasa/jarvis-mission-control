@@ -7,8 +7,9 @@ import { STATUS_META } from '../lib/constants';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
 import { useStore, optimisticMoveTask } from '../lib/store';
-import { moveTask, deleteTask } from '../lib/api';
+import { moveTask, deleteTask, ApiError } from '../lib/api';
 import { CreateSubtaskModal } from './CreateSubtaskModal';
+import { toast } from 'sonner';
 
 interface Props {
   task: Task;
@@ -55,7 +56,13 @@ export function TaskContextMenu({ task, x, y, onClose }: Props) {
 
   async function handleMove(status: TaskStatus) {
     onClose();
-    await optimisticMoveTask(task, status, upsertTask, moveTask);
+    try {
+      await optimisticMoveTask(task, status, upsertTask, moveTask);
+    } catch (error) {
+      toast.error('Task not completed', {
+        description: error instanceof ApiError ? error.message : 'Linked PR could not be merged.',
+      });
+    }
   }
 
   async function handleDelete() {
