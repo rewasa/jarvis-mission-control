@@ -1,10 +1,12 @@
 import { Router } from 'express';
+import { readFileSync } from 'node:fs';
 import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewed, getSubtasks, getSubtaskCount } from '../db/queries.js';
 import { broadcast } from '../events.js';
 import { adapter } from '../app.js';
 import { startTaskChatRun } from './chat.js';
-import { createKanbanTask, ensureKanbanRootTaskForAgentControlTask, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, syncKanbanChildrenForTask } from '../services/kanban-bridge.js';
+import { createKanbanTask, ensureKanbanRootTaskForAgentControlTask, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, syncKanbanChildrenForTask, findBoardForKanbanTask, getBoardTaskTranscriptPath } from '../services/kanban-bridge.js';
 import { mergeLinkedPullRequestForTask } from '../services/github-merge.js';
+import { refreshTaskGitHubStatus } from '../services/github-status.js';
 import { TASK_STATUSES, DELEGATION_STATUSES } from '../../shared/types.js';
 import type { TaskStatus, DelegationStatus } from '../../shared/types.js';
 
@@ -18,10 +20,23 @@ tasksRouter.get('/', (req, res) => {
   res.json({ tasks });
 });
 
-tasksRouter.get('/:id', (req, res) => {
+tasksRouter.get('/:id', async (req, res) => {
   const task = getTask(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  res.json({ task });
+
+  // Proactively refresh GitHub PR status from Kanban runs/comments/metadata
+  // so the PR URL is auto-detected before the user tries to move to done.
+  let enriched = task;
+  if (task.hermes_kanban_task_id && !task.github_pr_url) {
+    try {
+      const refreshed = await refreshTaskGitHubStatus(task);
+      if (refreshed) enriched = refreshed;
+    } catch {
+      // best-effort, don't fail the request
+    }
+  }
+
+  res.json({ task: enriched });
 });
 
 function generateTitle(text: string): string {
@@ -139,13 +154,13 @@ tasksRouter.delete('/:id', (req, res) => {
 });
 
 // Subtask routes — each subtask is a real Task with parent_task_id
-tasksRouter.get('/:id/subtasks', (req, res) => {
+tasksRouter.get('/:id/subtasks', async (req, res) => {
   const parent = getTask(req.params.id);
   if (!parent) return res.status(404).json({ error: 'Task not found' });
 
   if (parent.hermes_kanban_task_id) {
     try {
-      syncKanbanChildrenForTask(parent);
+      await syncKanbanChildrenForTask(parent);
     } catch (err) {
       console.warn('[kanban-bridge] Automatic child sync skipped:', err instanceof Error ? err.message : err);
     }
@@ -265,12 +280,12 @@ tasksRouter.post('/:id/subtasks', (req, res) => {
   res.status(201).json({ parent: updatedParent ?? parent, subtasks: getSubtasks(req.params.id), runId });
 });
 
-tasksRouter.post('/:id/kanban/sync', (req, res) => {
+tasksRouter.post('/:id/kanban/sync', async (req, res) => {
   const task = getTask(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
 
   try {
-    const result = syncKanbanChildrenForTask(task);
+    const result = await syncKanbanChildrenForTask(task);
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Sync failed' });
@@ -329,6 +344,31 @@ tasksRouter.get('/:id/kanban/logs', (req, res) => {
   });
 });
 
+tasksRouter.get('/:id/kanban/transcript', (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  if (!task.hermes_kanban_task_id) return res.status(404).json({ error: 'Task has no kanban mapping' });
+
+  const board = findBoardForKanbanTask(task.hermes_kanban_task_id);
+  if (!board) return res.status(404).json({ error: 'Kanban board not found for task' });
+
+  const logPath = getBoardTaskTranscriptPath(board, task.hermes_kanban_task_id);
+  if (!logPath) return res.status(404).type('text/plain').send('Transcript not found. The worker may not have started yet.');
+
+  try {
+    const content = readFileSync(logPath, 'utf-8');
+    res.type('text/plain');
+    // Return last 200KB max for the viewer (handles long runs)
+    if (content.length > 200_000) {
+      res.send('...(truncated, showing last 200KB)\n' + content.slice(content.length - 200_000));
+    } else {
+      res.send(content);
+    }
+  } catch (error) {
+    res.status(500).json({ error: 'Failed to read transcript', details: String(error) });
+  }
+});
+
 tasksRouter.post('/:id/move', async (req, res) => {
   const { status } = req.body;
   if (!TASK_STATUSES.includes(status)) {
@@ -339,13 +379,18 @@ tasksRouter.post('/:id/move', async (req, res) => {
   if (!current) return res.status(404).json({ error: 'Task not found' });
 
   if (status === 'done' && current.status !== 'done') {
-    const mergeResult = await mergeLinkedPullRequestForTask(current);
-    if (mergeResult.status !== 'merged') {
-      return res.status(409).json({
-        error: mergeResult.message,
-        code: mergeResult.status === 'auto_merge_enabled' ? 'PR_MERGE_PENDING' : 'PR_MERGE_BLOCKED',
-        merge: mergeResult,
-      });
+    try {
+      const mergeResult = await mergeLinkedPullRequestForTask(current);
+      if (mergeResult.status === 'merged') {
+        // PR found and merged (or already merged) — proceed to done
+      } else if (mergeResult.status === 'blocked') {
+        // PR exists but can't be merged right now — warn but don't block
+        console.warn(`[tasks] Move to done blocked by PR: ${mergeResult.message}`);
+      }
+      // 'auto_merge_enabled' — proceed, GitHub will squash when checks pass
+    } catch {
+      // No PR URL or gh CLI unavailable — warn but proceed
+      console.warn('[tasks] Move to done — no PR merge check possible');
     }
   }
 

@@ -471,3 +471,23 @@ export async function fetchBoardTaskBlockers(board: string, taskId: string) {
     `/kanban/boards/${encodeURIComponent(board)}/tasks/${encodeURIComponent(taskId)}/blockers`,
   );
 }
+
+export async function deleteKanbanBoard(board: string) {
+  return request<{ boards: KanbanBoardSummary[]; ok: boolean }>(
+    `/kanban/boards/${encodeURIComponent(board)}`, { method: 'DELETE' },
+  );
+}
+
+export function postKanbanComment(board: string, taskId: string, body: string) {
+  return request<{ board: string; taskId: string; comments: KanbanCommentEntry[]; ok: boolean }>(
+    `/kanban/boards/${encodeURIComponent(board)}/tasks/${encodeURIComponent(taskId)}/comment`,
+    { method: 'POST', body: JSON.stringify({ body }) },
+  );
+}
+
+export async function claimKanbanTask(board: string, taskId: string) {
+  return request<{ ok: boolean; task: KanbanTaskInfo; tasks: KanbanTaskInfo[] }>(
+    `/kanban/boards/${encodeURIComponent(board)}/tasks/${encodeURIComponent(taskId)}/claim`,
+    { method: 'POST' },
+  );
+}

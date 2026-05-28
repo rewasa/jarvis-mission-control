@@ -19,6 +19,7 @@ import {
   updateTask,
 } from '../db/queries.js';
 import { broadcast } from '../events.js';
+import { refreshTaskGitHubStatus } from './github-status.js';
 import type {
   DelegationStatus,
   KanbanCommentEntry,
@@ -92,6 +93,31 @@ function openKanbanDb(): Database.Database | null {
   const dbPath = getKanbanDbPath();
   if (!existsSync(dbPath)) return null;
   return new Database(dbPath, { readonly: true, fileMustExist: true });
+}
+
+function openKanbanDbForWrite(board: string): Database.Database | null {
+  const dbPath = getKanbanDbPathForBoard(board);
+  if (!existsSync(dbPath)) return null;
+  return new Database(dbPath);
+}
+
+export function addKanbanComment(board: string, kanbanId: string, author: string, body: string): KanbanCommentEntry | null {
+  const conn = openKanbanDbForWrite(board);
+  if (!conn) return null;
+  try {
+    const now = Date.now();
+    const result = conn.prepare(
+      'INSERT INTO task_comments (task_id, author, body, created_at) VALUES (?, ?, ?, ?)',
+    ).run(kanbanId, author, body, now);
+    return {
+      comment_id: Number(result.lastInsertRowid),
+      author,
+      body,
+      created_at: now,
+    };
+  } finally {
+    conn.close();
+  }
 }
 
 function parseJsonRecord(value: unknown): Record<string, unknown> {
@@ -245,7 +271,16 @@ export function appendKanbanComment(
 export function getKanbanTaskInfo(kanbanId: string | null): KanbanTaskInfo | null {
   if (!kanbanId) return null;
 
-  const conn = openKanbanDb();
+  // Prefer the correct board, fall back to default
+  const board = findBoardForKanbanTask(kanbanId) ?? 'default';
+  return getKanbanTaskInfoForBoard(board, kanbanId);
+}
+
+/** Board-aware overload — use when you already know the board. */
+export function getKanbanTaskInfoForBoard(board: string, kanbanId: string | null): KanbanTaskInfo | null {
+  if (!kanbanId) return null;
+
+  const conn = openKanbanDbForBoard(board);
   if (!conn) return null;
 
   try {
@@ -398,8 +433,15 @@ export function getKanbanLogs(kanbanId: string | null, limit = 50): KanbanLogEnt
 
 export function getKanbanRuns(kanbanId: string | null, limit = 20): KanbanRunEntry[] {
   if (!kanbanId) return [];
+  const board = findBoardForKanbanTask(kanbanId) ?? 'default';
+  return getKanbanRunsForBoard(board, kanbanId, limit);
+}
 
-  const conn = openKanbanDb();
+/** Board-aware overload — use when you already know the board. */
+export function getKanbanRunsForBoard(board: string, kanbanId: string | null, limit = 20): KanbanRunEntry[] {
+  if (!kanbanId) return [];
+
+  const conn = openKanbanDbForBoard(board);
   if (!conn) return [];
 
   try {
@@ -451,8 +493,15 @@ export function getKanbanRuns(kanbanId: string | null, limit = 20): KanbanRunEnt
 
 export function getKanbanComments(kanbanId: string | null, limit = 20): KanbanCommentEntry[] {
   if (!kanbanId) return [];
+  const board = findBoardForKanbanTask(kanbanId) ?? 'default';
+  return getKanbanCommentsForBoard(board, kanbanId, limit);
+}
 
-  const conn = openKanbanDb();
+/** Board-aware overload — use when you already know the board. */
+export function getKanbanCommentsForBoard(board: string, kanbanId: string | null, limit = 20): KanbanCommentEntry[] {
+  if (!kanbanId) return [];
+
+  const conn = openKanbanDbForBoard(board);
   if (!conn) return [];
 
   try {
@@ -487,6 +536,7 @@ function mapKanbanStatus(kanbanStatus: string): MappedStatuses {
   switch (kanbanStatus) {
     case 'todo':
     case 'ready':
+      return { status: 'todo', delegation_status: null };
     case 'running':
       return { status: 'in_progress', delegation_status: null };
     case 'blocked':
@@ -498,7 +548,7 @@ function mapKanbanStatus(kanbanStatus: string): MappedStatuses {
     case 'archived':
       return { status: 'done', delegation_status: 'done' };
     default:
-      return { status: 'in_progress', delegation_status: null };
+      return { status: 'todo', delegation_status: null };
   }
 }
 
@@ -523,12 +573,24 @@ export interface SyncResult {
   updated: number;
 }
 
-export function syncKanbanChildrenForTask(parentTask: Task): SyncResult {
+export async function syncKanbanChildrenForTask(parentTask: Task): Promise<SyncResult> {
   if (!parentTask.hermes_kanban_task_id) {
     throw new Error('Parent task has no hermes_kanban_task_id mapping');
   }
 
-  const children = getKanbanChildren(parentTask.hermes_kanban_task_id);
+  // Proactively discover PR URL from Kanban runs/comments/metadata
+  // so child tasks inherit it and the move-to-done check doesn't block.
+  let enrichedParent = parentTask;
+  if (!enrichedParent.github_pr_url) {
+    try {
+      const refreshed = await refreshTaskGitHubStatus(enrichedParent);
+      if (refreshed) enrichedParent = refreshed;
+    } catch {
+      // best-effort
+    }
+  }
+
+  const children = getKanbanChildren(enrichedParent.hermes_kanban_task_id ?? '');
   let imported = 0;
   let updated = 0;
 
@@ -556,15 +618,15 @@ export function syncKanbanChildrenForTask(parentTask: Task): SyncResult {
       delegation_profile: profile,
       assignee: profile,
     };
-    if (parentTask.github_pr_url) {
-      taskUpdates.github_pr_url = parentTask.github_pr_url;
-      taskUpdates.github_pr_number = parentTask.github_pr_number;
-      taskUpdates.github_pr_state = parentTask.github_pr_state;
-      taskUpdates.github_pr_head_ref = parentTask.github_pr_head_ref;
-      taskUpdates.github_pr_head_sha = parentTask.github_pr_head_sha;
-      taskUpdates.github_checks_status = parentTask.github_checks_status;
-      taskUpdates.github_checks_summary = parentTask.github_checks_summary;
-      taskUpdates.github_checks_updated_at = parentTask.github_checks_updated_at;
+    if (enrichedParent.github_pr_url) {
+      taskUpdates.github_pr_url = enrichedParent.github_pr_url;
+      taskUpdates.github_pr_number = enrichedParent.github_pr_number;
+      taskUpdates.github_pr_state = enrichedParent.github_pr_state;
+      taskUpdates.github_pr_head_ref = enrichedParent.github_pr_head_ref;
+      taskUpdates.github_pr_head_sha = enrichedParent.github_pr_head_sha;
+      taskUpdates.github_checks_status = enrichedParent.github_checks_status;
+      taskUpdates.github_checks_summary = enrichedParent.github_checks_summary;
+      taskUpdates.github_checks_updated_at = enrichedParent.github_checks_updated_at;
     }
 
     if (existing) {
@@ -602,8 +664,8 @@ export function syncKanbanChildrenForTask(parentTask: Task): SyncResult {
     imported++;
   }
 
-  const subtasks = getSubtasks(parentTask.id);
-  return { parent: parentTask, subtasks, imported, updated };
+  const subtasks = getSubtasks(enrichedParent.id);
+  return { parent: enrichedParent, subtasks, imported, updated };
 }
 
 // ── Multi-Board support ────────────────────────────────────────────────
@@ -830,6 +892,29 @@ export function getBoardTaskTranscriptPath(board: string, taskId: string): strin
     : join(root, 'kanban', 'boards', board, 'logs');
   const logFile = join(logDir, `${taskId}.log`);
   return existsSync(logFile) ? logFile : null;
+}
+
+/**
+ * Find which board a Kanban task belongs to by searching all boards.
+ * Returns the board name or null if not found.
+ */
+export function findBoardForKanbanTask(kanbanId: string): string | null {
+  const boards = listKanbanBoards();
+  for (const board of boards) {
+    const conn = openKanbanDbForBoard(board.name);
+    if (!conn) continue;
+    try {
+      const exists = conn.prepare('SELECT 1 FROM tasks WHERE id = ?').get(kanbanId);
+      if (exists) return board.name;
+    } finally { conn.close(); }
+  }
+  return null;
+}
+
+// ── SSE broadcasting ────────────────────────────────────────────────────
+
+export function broadcastKanbanChanged(board: string, kanbanId: string, status: string, title: string) {
+  broadcast({ type: 'kanban_changed', board, kanbanId, status, title });
 }
 
 // ── Blockers ────────────────────────────────────────────────────────────

@@ -1,7 +1,8 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
-import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock, ArrowRight, MessageSquareText, X, Activity, ExternalLink, GitPullRequest, RefreshCw, Bot, Link2, Save } from 'lucide-react';
+import { LazyLog, ScrollFollow } from '@melloware/react-logviewer';
+import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock, ArrowRight, MessageSquareText, X, Activity, ExternalLink, GitPullRequest, RefreshCw, Bot, Link2, Save, FileText } from 'lucide-react';
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
 import { useStore, optimisticMoveTask } from '../lib/store';
@@ -159,6 +160,51 @@ function KanbanPanel({ info, logs }: { info: KanbanTaskResponse | null; logs: Ka
             No Kanban events yet. The linked task is visible; logs appear here as the worker runs.
           </div>
         )}
+      </div>
+    </section>
+  );
+}
+
+// ── Worker Transcript (live log) ──────────────────────────────────────
+
+function TranscriptLog({ taskId, hasKanban }: { taskId: string; hasKanban: boolean }) {
+  const url = `${window.location.origin}/api/tasks/${encodeURIComponent(taskId)}/kanban/transcript`;
+
+  if (!hasKanban) {
+    return (
+      <section className="rounded-2xl border border-dashed border-zinc-200 bg-white/70 px-4 py-8 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-500">
+        <FileText size={16} className="mx-auto mb-1 opacity-50" />
+        Worker transcript unavailable — no Kanban task linked.
+      </section>
+    );
+  }
+
+  return (
+    <section className="rounded-2xl border border-amber-100 bg-white/90 shadow-sm shadow-amber-100/30 backdrop-blur dark:border-amber-900/40 dark:bg-zinc-900/80 dark:shadow-black/20 overflow-hidden">
+      <div className="flex items-center gap-2 border-b border-amber-100 px-3 py-2 dark:border-amber-900/40">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-300">
+          <FileText size={12} strokeWidth={2.5} />
+          Worker Transcript
+        </span>
+        <span className="text-[10px] text-zinc-400 dark:text-zinc-500">live log from Hermes worker</span>
+      </div>
+      <div style={{ height: 320 }}>
+        <ScrollFollow
+          startFollowing={true}
+          render={({ follow, onScroll }) => (
+            <LazyLog
+              url={url}
+              stream
+              follow={follow}
+              onScroll={onScroll}
+              fetchOptions={{ credentials: 'same-origin' }}
+              style={{ backgroundColor: 'transparent', color: 'inherit' }}
+              extraLines={1}
+              enableSearch
+              selectableLines
+            />
+          )}
+        />
       </div>
     </section>
   );
@@ -411,7 +457,7 @@ function SubtasksSidebar({ subtasks, onSync, syncing }: { subtasks: Task[]; onSy
   const visibleSubtasks = sortSubtasksForTriage(subtasks);
 
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/80">
+    <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/80 overflow-hidden flex flex-col max-h-96">
       <div className="border-b border-zinc-200 px-4 py-4 dark:border-zinc-800">
         <div className="mb-3 flex items-center gap-3">
           <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-purple-200 bg-purple-50 text-purple-700 shadow-sm dark:border-purple-900/70 dark:bg-purple-950/30 dark:text-purple-300">
@@ -460,7 +506,7 @@ function SubtasksSidebar({ subtasks, onSync, syncing }: { subtasks: Task[]; onSy
           />
         </div>
       </div>
-      <div className="px-4 py-3">
+      <div className="overflow-y-auto px-4 py-3 flex-1 min-h-0">
         <div className="flex flex-col gap-2.5">
           {visibleSubtasks.map((subtask) => (
             <SubtaskRow key={subtask.id} subtask={subtask} />
@@ -1110,6 +1156,7 @@ export function TaskDetailPage() {
           </div>
           <div className="flex flex-col gap-3">
             <KanbanPanel info={kanbanInfo} logs={kanbanLogs} />
+            <TranscriptLog taskId={task.id} hasKanban={!!kanbanInfo?.kanban_id} />
             <GitHubPanel
               status={githubStatus}
               onRefresh={handleRefreshGitHub}
