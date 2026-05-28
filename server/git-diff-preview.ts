@@ -65,23 +65,23 @@ export async function collectGitDiffSummary(cwd?: string): Promise<CodeDiffSumma
   const diffCwd = await resolveDiffCwd(cwd);
   if (!diffCwd) return null;
 
-  const [nameStatus, statRaw, unstagedRaw, stagedRaw] = await Promise.all([
-    git(['status', '--short'], diffCwd),
+  const [diffNameStatus, statRaw, unstagedRaw, stagedRaw] = await Promise.all([
+    git(['diff', '--name-status', 'HEAD'], diffCwd),
     git(['diff', '--stat', 'HEAD'], diffCwd),
     git(['diff', '--no-ext-diff', '--minimal'], diffCwd),
     git(['diff', '--cached', '--no-ext-diff', '--minimal'], diffCwd),
   ]);
 
-  const changedFiles = parseChangedFiles(nameStatus);
   const combinedDiff = [stagedRaw, unstagedRaw].filter(Boolean).join('\n');
-  if (changedFiles.length === 0 && !combinedDiff.trim()) return null;
+  if (!combinedDiff.trim()) return null;
 
+  const changedFiles = parseChangedFiles(diffNameStatus);
   const stat = trimOutput(statRaw.trim(), MAX_STAT_BYTES);
   const diff = trimOutput(combinedDiff.trim(), MAX_DIFF_BYTES);
 
   return {
     files: changedFiles,
-    fileCount: nameStatus.split('\n').filter((line) => line.trim()).length,
+    fileCount: diffNameStatus.split('\n').filter((line) => line.trim()).length,
     stat: stat.value,
     patch: diff.value,
     truncated: stat.truncated || diff.truncated,
