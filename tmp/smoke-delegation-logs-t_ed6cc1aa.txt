@@ -1,0 +1,11 @@
+smoke: Kanban delegation logs from AgentControl UI polish
+task: t_ed6cc1aa
+agentcontrol_task: a946239f-926f-4662-9617-a3df8fe5869b
+agentcontrol_board: jarvis-mission-control
+timestamp: 20260529-062259
+verified:
+- Real Kanban task: YES (kanban_show returned full context)
+- Workspace: worktree @ /Users/renatowasescha/GIT/jarvis-mission-control, branch feat/kanban-card-pr-polish
+- Parent context: inherited (AgentControl task ID + board visible in body)
+- Child tasks: t_e274c722 linked
+- Chat/status/log: exposed in worker_context + events (created/claimed/spawned)
