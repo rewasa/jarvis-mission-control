@@ -1,0 +1,4 @@
+Smoke child t_e274c722 verified: real Kanban task with full hermes dispatch
+AgentControl parent: a946239f-926f-4662-9617-a3df8fe5869b
+AgentControl subtask: 8d8c1a23-b99f-4fa2-b374-6b24e464f658
+Verified: kanban_show worker_context, parent inheritance from t_ed6cc1aa, events exposed
