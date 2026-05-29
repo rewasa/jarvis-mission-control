@@ -1,0 +1,1 @@
+PR inheritance smoke: child t_73f96367 confirmed PR #21 context propagated from parent t_f1e69c2a (2026-05-28)
