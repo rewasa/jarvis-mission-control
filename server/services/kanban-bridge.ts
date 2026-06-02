@@ -474,19 +474,43 @@ function mapKanbanStatus(kanbanStatus: string): MappedStatuses {
   switch (kanbanStatus) {
     case 'todo':
     case 'ready':
+      return { status: 'todo', delegation_status: null };
     case 'running':
-      return { status: 'in_progress', delegation_status: null };
+      return { status: 'in_progress', delegation_status: 'running' };
     case 'blocked':
       return { status: 'in_progress', delegation_status: 'blocked' };
     case 'review':
-      return { status: 'in_review', delegation_status: null };
     case 'done':
       return { status: 'in_review', delegation_status: 'review' };
     case 'archived':
       return { status: 'done', delegation_status: 'done' };
     default:
-      return { status: 'in_progress', delegation_status: null };
+      return { status: 'todo', delegation_status: null };
   }
+}
+
+export function syncTaskStatusFromKanban(task: Task): { task: Task; changed: boolean } {
+  if (!task.hermes_kanban_task_id) return { task, changed: false };
+
+  const info = getKanbanTaskInfo(task.hermes_kanban_task_id);
+  if (!info) return { task, changed: false };
+
+  const mapped = mapKanbanStatus(info.status);
+  const profile = task.delegation_profile ?? extractProfileFromKanban(info);
+  const updates: Partial<Pick<Task, 'status' | 'delegation_status' | 'delegation_profile' | 'assignee'>> = {};
+
+  if (task.status !== mapped.status) updates.status = mapped.status;
+  if (task.delegation_status !== mapped.delegation_status) updates.delegation_status = mapped.delegation_status;
+  if (!task.delegation_profile && profile) updates.delegation_profile = profile;
+  if (!task.assignee && profile) updates.assignee = profile;
+
+  if (Object.keys(updates).length === 0) return { task, changed: false };
+
+  const updated = updateTask(task.id, updates);
+  if (!updated) return { task, changed: false };
+
+  broadcast({ type: 'task_updated', task: updated });
+  return { task: updated, changed: true };
 }
 
 function extractAgentControlParentId(kanbanBody: string | null): string | null {

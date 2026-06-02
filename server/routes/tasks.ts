@@ -3,7 +3,7 @@ import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewe
 import { broadcast } from '../events.js';
 import { adapter } from '../app.js';
 import { startTaskChatRun } from './chat.js';
-import { createKanbanTask, ensureKanbanRootTaskForAgentControlTask, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, syncKanbanChildrenForTask } from '../services/kanban-bridge.js';
+import { createKanbanTask, ensureKanbanRootTaskForAgentControlTask, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, syncKanbanChildrenForTask, syncTaskStatusFromKanban } from '../services/kanban-bridge.js';
 import { mergeLinkedPullRequestForTask } from '../services/github-merge.js';
 import { TASK_STATUSES, DELEGATION_STATUSES } from '../../shared/types.js';
 import type { TaskStatus, DelegationStatus } from '../../shared/types.js';
@@ -14,14 +14,17 @@ const LOW_INFORMATION_TITLES = new Set(['?', 'hi', 'hello', 'hey', 'yo']);
 
 tasksRouter.get('/', (req, res) => {
   const status = req.query.status as TaskStatus | undefined;
-  const tasks = getAllTasks(status);
+  const tasks = getAllTasks()
+    .map(task => (task.hermes_kanban_task_id ? syncTaskStatusFromKanban(task).task : task))
+    .filter(task => !status || task.status === status);
   res.json({ tasks });
 });
 
 tasksRouter.get('/:id', (req, res) => {
   const task = getTask(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  res.json({ task });
+  const synced = syncTaskStatusFromKanban(task).task;
+  res.json({ task: synced });
 });
 
 function generateTitle(text: string): string {
@@ -291,9 +294,11 @@ tasksRouter.get('/:id/kanban', (req, res) => {
   const info = getKanbanTaskInfo(task.hermes_kanban_task_id);
   if (!info) return res.status(404).json({ error: 'Kanban task not found' });
 
+  const synced = syncTaskStatusFromKanban(task).task;
   res.json({
-    kanban_id: task.hermes_kanban_task_id,
-    delegation_profile: task.delegation_profile,
+    kanban_id: synced.hermes_kanban_task_id,
+    delegation_profile: synced.delegation_profile,
+    task: synced,
     kanban: info,
   });
 });
@@ -307,21 +312,10 @@ tasksRouter.get('/:id/kanban/logs', (req, res) => {
   const runs = getKanbanRuns(task.hermes_kanban_task_id, limit);
   const logs = getKanbanLogs(task.hermes_kanban_task_id, limit);
   const comments = getKanbanComments(task.hermes_kanban_task_id, limit);
-  const latestRun = runs[0];
-  const latestStatus = latestRun?.status ?? getKanbanTaskInfo(task.hermes_kanban_task_id)?.status;
-  const nextDelegationStatus: DelegationStatus | undefined = latestStatus === 'blocked'
-    ? 'blocked'
-    : latestStatus === 'done' || latestStatus === 'review' || latestRun?.outcome === 'success'
-      ? 'review'
-      : latestStatus === 'running'
-        ? 'running'
-        : undefined;
-  if (nextDelegationStatus && task.delegation_status !== nextDelegationStatus) {
-    const updated = updateTask(task.id, { delegation_status: nextDelegationStatus });
-    if (updated) broadcast({ type: 'task_updated', task: updated });
-  }
+  const synced = syncTaskStatusFromKanban(task).task;
   res.json({
-    kanban_id: task.hermes_kanban_task_id,
+    kanban_id: synced.hermes_kanban_task_id,
+    task: synced,
     logs,
     events: logs,
     runs,
