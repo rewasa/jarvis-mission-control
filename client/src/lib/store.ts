@@ -1,6 +1,44 @@
 import { create } from 'zustand';
-import type { Task, TaskRunState, TaskStatus } from '@shared/types';
+import type { CompleteTaskResponse, Task, TaskRunState, TaskStatus } from '@shared/types';
 import { ApiError } from './api';
+
+export type BoardTaskScope = 'main' | 'all';
+export type ScheduledTaskFilterMode = 'all' | 'active' | 'paused' | 'errors';
+
+const UI_STORAGE_PREFIX = 'agentcontrol.ui.';
+
+function readStoredString(key: string, fallback: string): string {
+  try {
+    return localStorage.getItem(`${UI_STORAGE_PREFIX}${key}`) ?? fallback;
+  } catch {
+    return fallback;
+  }
+}
+
+function writeStoredString(key: string, value: string): void {
+  try {
+    localStorage.setItem(`${UI_STORAGE_PREFIX}${key}`, value);
+  } catch {
+    // Private browsing / storage-disabled mode should not break the UI.
+  }
+}
+
+function readBoardTaskScope(): BoardTaskScope {
+  const value = readStoredString('board.taskScope', 'main');
+  return value === 'all' ? 'all' : 'main';
+}
+
+function readTaskStatus(key: string, fallback: TaskStatus): TaskStatus {
+  const value = readStoredString(key, fallback);
+  return value === 'todo' || value === 'in_progress' || value === 'in_review' || value === 'done'
+    ? value
+    : fallback;
+}
+
+function readScheduledTaskFilter(): ScheduledTaskFilterMode {
+  const value = readStoredString('scheduledTasks.filterMode', 'all');
+  return value === 'active' || value === 'paused' || value === 'errors' ? value : 'all';
+}
 
 interface AppState {
   tasks: Task[];
@@ -8,6 +46,13 @@ interface AppState {
   tasksLoaded: boolean;
   sidebarCollapsed: boolean;
   subtasksByParent: Map<string, Task[]>;
+  boardTaskScope: BoardTaskScope;
+  boardSearchQuery: string;
+  boardMobileColumn: TaskStatus;
+  scheduledTaskFilter: ScheduledTaskFilterMode;
+  scheduledTaskSearch: string;
+  kanbanSelectedBoard: string | null;
+  kanbanSelectedTask: string | null;
 
   setTasks: (tasks: Task[]) => void;
   upsertTask: (task: Task) => void;
@@ -17,6 +62,12 @@ interface AppState {
   toggleSidebar: () => void;
   setSubtasks: (parentId: string, subtasks: Task[]) => void;
   upsertSubtask: (parentId: string, subtask: Task) => void;
+  setBoardTaskScope: (scope: BoardTaskScope) => void;
+  setBoardSearchQuery: (query: string) => void;
+  setBoardMobileColumn: (status: TaskStatus) => void;
+  setScheduledTaskFilter: (filter: ScheduledTaskFilterMode) => void;
+  setScheduledTaskSearch: (query: string) => void;
+  setKanbanSelection: (board: string | null, task?: string | null) => void;
 }
 
 function tasksEqual(a: Task, b: Task): boolean {
@@ -65,14 +116,21 @@ export const useStore = create<AppState>((set) => ({
   tasksLoaded: false,
   sidebarCollapsed: localStorage.getItem('sidebarCollapsed') === 'true',
   subtasksByParent: new Map<string, Task[]>(),
+  boardTaskScope: readBoardTaskScope(),
+  boardSearchQuery: readStoredString('board.searchQuery', ''),
+  boardMobileColumn: readTaskStatus('board.mobileColumn', 'todo'),
+  scheduledTaskFilter: readScheduledTaskFilter(),
+  scheduledTaskSearch: readStoredString('scheduledTasks.searchQuery', ''),
+  kanbanSelectedBoard: readStoredString('kanban.selectedBoard', '') || null,
+  kanbanSelectedTask: readStoredString('kanban.selectedTask', '') || null,
 
   setTasks: (tasks) => set({ tasks, tasksLoaded: true, subtasksByParent: buildSubtasksByParent(tasks) }),
 
   upsertTask: (task) =>
     set((state) => {
       const idx = state.tasks.findIndex((t) => t.id === task.id);
-      const existing = idx === -1 ? null : state.tasks[idx];
-      if (idx === -1) {
+      const existing = idx === -1 ? undefined : state.tasks[idx];
+      if (!existing) {
         const tasks = [...state.tasks, task];
         if (!task.parent_task_id) return { tasks };
         const subtasksByParent = new Map(state.subtasksByParent);
@@ -166,13 +224,44 @@ export const useStore = create<AppState>((set) => ({
       subtasksByParent.set(parentId, next);
       return { subtasksByParent };
     }),
+
+  setBoardTaskScope: (scope) => {
+    writeStoredString('board.taskScope', scope);
+    set({ boardTaskScope: scope });
+  },
+
+  setBoardSearchQuery: (query) => {
+    writeStoredString('board.searchQuery', query);
+    set({ boardSearchQuery: query });
+  },
+
+  setBoardMobileColumn: (status) => {
+    writeStoredString('board.mobileColumn', status);
+    set({ boardMobileColumn: status });
+  },
+
+  setScheduledTaskFilter: (filter) => {
+    writeStoredString('scheduledTasks.filterMode', filter);
+    set({ scheduledTaskFilter: filter });
+  },
+
+  setScheduledTaskSearch: (query) => {
+    writeStoredString('scheduledTasks.searchQuery', query);
+    set({ scheduledTaskSearch: query });
+  },
+
+  setKanbanSelection: (board, task = null) => {
+    writeStoredString('kanban.selectedBoard', board ?? '');
+    writeStoredString('kanban.selectedTask', task ?? '');
+    set({ kanbanSelectedBoard: board, kanbanSelectedTask: task });
+  },
 }));
 
 export async function optimisticMoveTask(
   task: Task,
   status: TaskStatus,
   upsertTask: (t: Task) => void,
-  apiMove: (id: string, s: TaskStatus) => Promise<{ task: Task }>,
+  apiMove: (id: string, s: TaskStatus) => Promise<CompleteTaskResponse>,
 ) {
   upsertTask({ ...task, status, updated_at: Date.now() });
   try {

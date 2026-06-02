@@ -238,7 +238,7 @@ function CommandSuggestionList({
       <div className="flex items-center justify-between gap-3 border-b border-zinc-100 px-3 py-2 dark:border-zinc-800">
         <div className="min-w-0">
           <div className="text-xs font-semibold uppercase tracking-wide text-zinc-500 dark:text-zinc-400">Hermes commands</div>
-          <div className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">↑/↓ auswählen · Tab/Enter einsetzen · Esc schliessen</div>
+          <div className="truncate text-[11px] text-zinc-400 dark:text-zinc-500">↑/↓ select · Tab/Enter insert · Esc close</div>
         </div>
         {activeSuggestion && (
           <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-0.5 text-[11px] font-medium text-zinc-500 dark:bg-zinc-800 dark:text-zinc-300">
@@ -724,16 +724,6 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
     window.requestAnimationFrame(() => inputRef.current?.focus());
   }, [input]);
 
-  const handleSteerClick = useCallback(() => {
-    const text = input.trimStart();
-    if (/^\/steer(?:\s+|$)/i.test(text)) {
-      inputRef.current?.focus();
-      return;
-    }
-    setInput((current) => current.trim().length > 0 ? `/steer ${current.trimStart()}` : '/steer ');
-    window.requestAnimationFrame(() => inputRef.current?.focus());
-  }, [input]);
-
   const goalToggleDisabled = isStreaming || compactionBlocker || hasQueuedMessages;
   const handleToggleGoalMode = useCallback(() => setRunMode(toggleRunMode), []);
 
@@ -954,16 +944,6 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
                 onRunModeChange={setRunMode}
               />
             </div>
-            <button
-              type="button"
-              onClick={handleSteerClick}
-              disabled={configPending}
-              title="Add /steer command"
-              aria-label="Add /steer command"
-              className="inline-flex h-8 items-center justify-center rounded-lg border border-zinc-200 bg-white px-2.5 text-xs font-semibold text-zinc-600 shadow-sm transition-colors hover:bg-zinc-50 disabled:cursor-not-allowed disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-800 dark:text-zinc-300 dark:hover:bg-zinc-700/70"
-            >
-              /steer
-            </button>
             <div className="flex items-center gap-2">
               {context && (
                 <ContextRing

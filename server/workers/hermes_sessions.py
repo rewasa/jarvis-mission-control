@@ -280,9 +280,11 @@ def project_session_messages(session_id: Any, task_id: Any = None) -> dict[str, 
         except Exception as exc:
             raise WorkerError(f"Could not load Hermes session messages: {exc}", code="session_load_error") from exc
 
-        is_root_session = lineage_index == 0
-        compaction_seen = is_root_session
-        child_user_seen = is_root_session
+        # Older AgentControl task sessions may contain a root session with no
+        # compaction handoff. Treat every lineage segment as displayable; the
+        # downstream filters still remove tool-only assistant placeholders.
+        compaction_seen = True
+        child_user_seen = True
 
         for row in rows:
             if not isinstance(row, dict):

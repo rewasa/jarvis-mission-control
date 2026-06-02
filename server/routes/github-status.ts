@@ -145,7 +145,7 @@ githubStatusRouter.post('/:id/github/merge', async (req, res) => {
 
   try {
     const result = await mergeLinkedPullRequestForTask(task);
-    if (result.status === 'blocked') {
+    if (result.status === 'blocked' || result.status === 'skipped_no_pr') {
       return res.status(409).json({
         error: result.message,
         ...result,

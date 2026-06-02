@@ -202,6 +202,12 @@ export function AgentControlCard({ task, run }: { task: Task; run?: TaskRunState
           <div className="flex flex-col gap-2">
             {/* Top row: meta pills */}
             <div className="flex flex-wrap items-center gap-1.5">
+              {task.parent_task_id && (
+                <span className="inline-flex items-center gap-1 rounded bg-indigo-50 px-1.5 py-0.5 text-[10px] font-semibold text-indigo-700 dark:bg-indigo-950/30 dark:text-indigo-300">
+                  <GitBranch size={10} strokeWidth={2.5} />
+                  Subtask
+                </span>
+              )}
               <PriorityBadge priority={task.priority} />
               <LabelChips labelsJson={task.labels_json} />
               {delegation && DELEGATION_STATUSES.includes(delegation) && (

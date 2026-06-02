@@ -1,0 +1,20 @@
+<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">AgentControl favicon</title>
+  <desc id="desc">White autonomous agent symbol on a dark rounded square.</desc>
+  <defs>
+    <linearGradient id="bg" x1="8" y1="6" x2="56" y2="58" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+  </defs>
+  <rect x="3" y="3" width="58" height="58" rx="15" fill="url(#bg)"/>
+  <rect x="4.2" y="4.2" width="55.6" height="55.6" rx="13.8" stroke="#FFFFFF" stroke-opacity="0.22" stroke-width="2.4"/>
+  <path d="M32 12L45 19.2L52 32L45 44.8L32 52L19 44.8L12 32L19 19.2L32 12Z" stroke="#FFFFFF" stroke-width="4.8" stroke-linejoin="round"/>
+  <path d="M32 21.5L39 25.5L43 32L39 38.5L32 42.5L25 38.5L21 32L25 25.5L32 21.5Z" stroke="#FFFFFF" stroke-width="3.8" stroke-linejoin="round" stroke-opacity="0.8"/>
+  <circle cx="32" cy="29" r="4" fill="#FFFFFF"/>
+  <path d="M24.8 40.5C26.3 36.7 28.8 34.9 32 34.9C35.2 34.9 37.7 36.7 39.2 40.5" stroke="#FFFFFF" stroke-width="3.8" stroke-linecap="round"/>
+  <circle cx="32" cy="12" r="2.8" fill="#FFFFFF"/>
+  <circle cx="52" cy="32" r="2.8" fill="#FFFFFF"/>
+  <circle cx="32" cy="52" r="2.8" fill="#FFFFFF"/>
+  <circle cx="12" cy="32" r="2.8" fill="#FFFFFF"/>
+</svg>

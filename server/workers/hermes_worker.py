@@ -56,6 +56,7 @@ AGENT_SEMAPHORE = threading.BoundedSemaphore(AGENT_RUN_LIMIT)
 ACTIVE_TASKS: dict[str, str] = {}
 ACTIVE_AGENTS: dict[str, Any] = {}
 PENDING_INTERRUPTS: dict[str, str] = {}
+PENDING_STEERS: dict[str, str] = {}
 ACTIVE_TASKS_LOCK = threading.Lock()
 DEFAULT_INTERRUPT_REASON = "Stopped by user"
 
@@ -452,18 +453,28 @@ def _try_interrupt_agent(agent: Any, reason: str) -> bool:
     return False
 
 
+def _try_steer_agent(agent: Any, message: str) -> bool:
+    if agent is not None and hasattr(agent, "steer"):
+        return bool(agent.steer(message))
+    return False
+
+
 def _register_active_agent(task_key: str, request_id: str, agent: Any) -> None:
     pending_reason = None
+    pending_steer = None
     with ACTIVE_TASKS_LOCK:
         if ACTIVE_TASKS.get(task_key) != request_id:
             return
         ACTIVE_AGENTS[task_key] = agent
         pending_reason = PENDING_INTERRUPTS.pop(task_key, None)
+        pending_steer = PENDING_STEERS.pop(task_key, None)
 
     # An interrupt that arrived before this agent was constructed was parked in
     # PENDING_INTERRUPTS; apply it now that the agent exists.
     if pending_reason:
         _try_interrupt_agent(agent, pending_reason)
+    if pending_steer:
+        _try_steer_agent(agent, pending_steer)
 
 
 def _clear_task_active(task_key: str, request_id: str) -> None:
@@ -472,6 +483,7 @@ def _clear_task_active(task_key: str, request_id: str) -> None:
             ACTIVE_TASKS.pop(task_key, None)
             ACTIVE_AGENTS.pop(task_key, None)
             PENDING_INTERRUPTS.pop(task_key, None)
+            PENDING_STEERS.pop(task_key, None)
 
 
 def _interrupt_active_chat(request: dict[str, Any]) -> dict[str, bool]:
@@ -490,6 +502,25 @@ def _interrupt_active_chat(request: dict[str, Any]) -> dict[str, bool]:
             return {"interrupted": True}
 
     return {"interrupted": _try_interrupt_agent(agent, reason)}
+
+
+def _steer_active_chat(request: dict[str, Any]) -> dict[str, bool]:
+    task_key = _task_key_for(request)
+    message = string_or_none(request.get("message")) or string_or_none(request.get("content"))
+    if not message:
+        raise WorkerError("message is required", code="bad_request")
+
+    with ACTIVE_TASKS_LOCK:
+        if task_key not in ACTIVE_TASKS:
+            return {"steered": False}
+
+        agent = ACTIVE_AGENTS.get(task_key)
+        if agent is None:
+            existing = PENDING_STEERS.get(task_key)
+            PENDING_STEERS[task_key] = f"{existing}\n{message}" if existing else message
+            return {"steered": True}
+
+    return {"steered": _try_steer_agent(agent, message)}
 
 
 def _custom_providers(cfg: dict[str, Any]) -> list[dict[str, Any]]:
@@ -1616,6 +1647,8 @@ def _handle_request(request: dict[str, Any]) -> None:
             _submit_background_agent_request(request_id, request, name_prefix="goal", handler=_goal_evaluate)
         elif request_type == "chat.interrupt":
             _result(request_id, _interrupt_active_chat(request))
+        elif request_type == "chat.steer":
+            _result(request_id, _steer_active_chat(request))
         elif request_type == "chat":
             _submit_chat_request(request_id, request)
         elif request_type == "session.compress":

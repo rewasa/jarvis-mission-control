@@ -497,6 +497,16 @@ export class HermesWorkerAdapter implements AgentAdapter {
     return result.interrupted;
   }
 
+  async steerChat(sessionId: string, message: string): Promise<boolean> {
+    const result = await this.client.request<{ steered: boolean }>({
+      type: 'chat.steer',
+      sessionId,
+      taskId: sessionId,
+      message,
+    }, WORKER_INTERRUPT_TIMEOUT_MS);
+    return result.steered;
+  }
+
   async healthCheck(): Promise<boolean> {
     try {
       await this.client.start();

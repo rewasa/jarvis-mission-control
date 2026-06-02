@@ -15,9 +15,12 @@ import {
   Pencil,
   Plus,
   Repeat,
+  Search,
+  SlidersHorizontal,
   Sparkles,
   Trash2,
   Wrench,
+  X,
   XCircle,
   Zap,
   type LucideIcon,
@@ -52,6 +55,7 @@ import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { usePageHeader, type PageHeaderConfig } from './Header';
 import { ModelPicker } from './InputToolbar';
 import { MarkdownContent } from './MarkdownContent';
+import { useStore, type ScheduledTaskFilterMode } from '../lib/store';
 
 const DEFAULT_PAUSE_REASON = 'Paused from AgentControl';
 const HERMES_DELIVERY_DOCS = 'https://hermes-agent.nousresearch.com/docs/user-guide/features/cron#delivery-options';
@@ -208,6 +212,51 @@ function deliveryLabel(scheduledTask: ScheduledTask): string {
 
 function deliveryIssueSummary(scheduledTask: ScheduledTask): string | null {
   return scheduledTaskDeliveryIssueText(scheduledTask);
+}
+
+function scheduledTaskHasIssue(scheduledTask: ScheduledTask): boolean {
+  return scheduledTask.lastStatus === 'error'
+    || Boolean(scheduledTask.lastError || scheduledTask.lastDeliveryError);
+}
+
+function scheduledTaskMatchesFilter(scheduledTask: ScheduledTask, filterMode: ScheduledTaskFilterMode): boolean {
+  if (filterMode === 'active') return scheduledTask.enabled;
+  if (filterMode === 'paused') return !scheduledTask.enabled;
+  if (filterMode === 'errors') return scheduledTaskHasIssue(scheduledTask);
+  return true;
+}
+
+function scheduledTaskSearchText(scheduledTask: ScheduledTask): string {
+  return [
+    scheduledTask.name,
+    scheduledTask.prompt,
+    scheduleSummary(scheduledTask),
+    scheduleRaw(scheduledTask),
+    scheduledTask.scheduleDisplay,
+    scheduledTask.lastStatus,
+    scheduledTask.lastError,
+    scheduledTask.lastDeliveryError,
+    scheduledTask.deliver,
+    scheduledTask.model,
+    scheduledTask.provider,
+    scheduledTask.workdir,
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase();
+}
+
+function filterScheduledTasks(
+  scheduledTasks: ScheduledTask[],
+  filterMode: ScheduledTaskFilterMode,
+  searchQuery: string,
+): ScheduledTask[] {
+  const normalizedQuery = searchQuery.trim().toLowerCase();
+  return scheduledTasks.filter((scheduledTask) => {
+    if (!scheduledTaskMatchesFilter(scheduledTask, filterMode)) return false;
+    if (!normalizedQuery) return true;
+    return scheduledTaskSearchText(scheduledTask).includes(normalizedQuery);
+  });
 }
 
 function promptDescription(prompt: string | null): string {
@@ -728,29 +777,48 @@ function EmptyScheduledTasksView({
 
 function ScheduledTasksList({
   scheduledTasks,
+  totalTaskCount,
   taskLimit,
+  filterMode,
+  searchQuery,
   pendingAction,
   activeRunScheduledTaskId,
   onOpenRuns,
   onCreate,
+  onFilterModeChange,
+  onSearchQueryChange,
   onEdit,
   onRun,
   onToggle,
   onDelete,
 }: {
   scheduledTasks: ScheduledTask[];
+  totalTaskCount: number;
   taskLimit: number;
+  filterMode: ScheduledTaskFilterMode;
+  searchQuery: string;
   pendingAction: PendingAction | null;
   activeRunScheduledTaskId: string | null;
   onOpenRuns: (scheduledTask: ScheduledTask) => void;
   onCreate: () => void;
+  onFilterModeChange: (filterMode: ScheduledTaskFilterMode) => void;
+  onSearchQueryChange: (searchQuery: string) => void;
   onEdit: (scheduledTask: ScheduledTask) => void;
   onRun: (scheduledTask: ScheduledTask) => void;
   onToggle: (scheduledTask: ScheduledTask) => void;
   onDelete: (scheduledTask: ScheduledTask) => void;
 }) {
-  const taskCountLabel = scheduledTasks.length >= taskLimit ? `showing ${taskLimit}` : `${scheduledTasks.length} total`;
+  const filtered = scheduledTasks.length !== totalTaskCount;
+  const taskCountLabel = totalTaskCount >= taskLimit
+    ? `${scheduledTasks.length} of ${taskLimit}`
+    : filtered ? `${scheduledTasks.length} of ${totalTaskCount}` : `${totalTaskCount} total`;
   const anyRunWatched = activeRunScheduledTaskId !== null;
+  const filters: { value: ScheduledTaskFilterMode; label: string }[] = [
+    { value: 'all', label: 'All' },
+    { value: 'active', label: 'Active' },
+    { value: 'paused', label: 'Paused' },
+    { value: 'errors', label: 'Errors' },
+  ];
   const headerActions = useMemo(() => (
     <ActionButton icon={<Plus size={15} />} onClick={onCreate}>New recurring task</ActionButton>
   ), [onCreate]);
@@ -778,9 +846,59 @@ function ScheduledTasksList({
 
   return (
     <>
-      <div className="flex items-center gap-3 border-b border-zinc-200 px-4 py-3 sm:px-5 dark:border-zinc-800">
-        <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Recurring</h2>
-        <span className="text-xs text-zinc-400 dark:text-zinc-500">{taskCountLabel}</span>
+      <div className="border-b border-zinc-200 px-4 py-3 sm:px-5 dark:border-zinc-800">
+        <div className="rounded-2xl border border-zinc-200 bg-zinc-50/80 p-2 shadow-inner sm:p-3 dark:border-zinc-800 dark:bg-zinc-900/50">
+          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-white text-zinc-600 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-950 dark:text-zinc-300 dark:ring-zinc-800">
+                <SlidersHorizontal size={15} />
+              </span>
+              <div className="min-w-0">
+                <h2 className="text-base font-semibold text-zinc-900 dark:text-zinc-100">Filter recurring tasks</h2>
+                <p className="text-xs text-zinc-500 dark:text-zinc-400">{taskCountLabel}</p>
+              </div>
+            </div>
+
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
+              <div className="relative min-w-0 sm:w-80">
+                <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400 dark:text-zinc-500" />
+                <input
+                  type="search"
+                  value={searchQuery}
+                  onChange={(event) => onSearchQueryChange(event.target.value)}
+                  placeholder="Search name, prompt, model, workdir..."
+                  className="h-11 w-full rounded-xl border border-zinc-200 bg-white pl-9 pr-10 text-base text-zinc-900 placeholder:text-zinc-400 outline-none transition-colors focus:border-zinc-400 sm:h-10 sm:text-sm dark:border-zinc-700 dark:bg-zinc-950 dark:text-zinc-100 dark:focus:border-zinc-500"
+                />
+                {searchQuery && (
+                  <button
+                    type="button"
+                    onClick={() => onSearchQueryChange('')}
+                    aria-label="Clear search"
+                    className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+                  >
+                    <X size={14} />
+                  </button>
+                )}
+              </div>
+
+              <div className="grid grid-cols-4 rounded-xl border border-zinc-200 bg-white p-1 text-xs font-semibold shadow-sm dark:border-zinc-800 dark:bg-zinc-950">
+                {filters.map((filter) => (
+                  <button
+                    key={filter.value}
+                    type="button"
+                    onClick={() => onFilterModeChange(filter.value)}
+                    className={`min-h-10 rounded-lg px-2 transition-colors sm:px-3 ${filterMode === filter.value
+                      ? 'bg-zinc-900 text-white shadow-sm dark:bg-zinc-100 dark:text-zinc-950'
+                      : 'text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-100'
+                    }`}
+                  >
+                    {filter.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <div className="divide-y divide-zinc-100 dark:divide-zinc-800 lg:hidden">
@@ -1477,6 +1595,10 @@ export function ScheduledTasksPage() {
   const [loadingRuns, setLoadingRuns] = useState(false);
   const [loadingContent, setLoadingContent] = useState(false);
   const [runFilter, setRunFilter] = useState<RunFilterMode>('all');
+  const scheduledTaskFilter = useStore((s) => s.scheduledTaskFilter);
+  const scheduledTaskSearch = useStore((s) => s.scheduledTaskSearch);
+  const setScheduledTaskFilter = useStore((s) => s.setScheduledTaskFilter);
+  const setScheduledTaskSearch = useStore((s) => s.setScheduledTaskSearch);
   const [error, setError] = useState<string | null>(null);
   const [editorError, setEditorError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
@@ -1504,6 +1626,10 @@ export function ScheduledTasksPage() {
   const selectedRunId = runId ?? null;
   const activeRunId = selectedRunId ?? runs[0]?.id ?? null;
   const waitingForRun = Boolean(runPoll && runPoll.scheduledTaskId === selectedScheduledTaskId);
+  const filteredScheduledTasks = useMemo(
+    () => filterScheduledTasks(scheduledTasks, scheduledTaskFilter, scheduledTaskSearch),
+    [scheduledTaskFilter, scheduledTaskSearch, scheduledTasks],
+  );
 
   const replaceScheduledTask = useCallback((scheduledTask: ScheduledTask) => {
     setScheduledTasks((current) => (
@@ -1855,12 +1981,17 @@ export function ScheduledTasksPage() {
 
     return (
       <ScheduledTasksList
-        scheduledTasks={scheduledTasks}
+        scheduledTasks={filteredScheduledTasks}
+        totalTaskCount={scheduledTasks.length}
         taskLimit={SCHEDULED_TASKS_PAGE_SIZE}
+        filterMode={scheduledTaskFilter}
+        searchQuery={scheduledTaskSearch}
         pendingAction={pendingAction}
         activeRunScheduledTaskId={runPoll?.scheduledTaskId ?? null}
         onOpenRuns={openScheduledTaskRuns}
         onCreate={openBlankScheduledTask}
+        onFilterModeChange={setScheduledTaskFilter}
+        onSearchQueryChange={setScheduledTaskSearch}
         onEdit={openEdit}
         onRun={runScheduledTaskFromList}
         onToggle={toggleScheduledTask}

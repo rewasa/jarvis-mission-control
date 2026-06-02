@@ -9,6 +9,7 @@ export function useTasks() {
   const setTasks = useStore((s) => s.setTasks);
   const upsertTask = useStore((s) => s.upsertTask);
   const removeTask = useStore((s) => s.removeTask);
+  const setSubtasks = useStore((s) => s.setSubtasks);
   const setTaskRuns = useStore((s) => s.setTaskRuns);
   const setTaskRun = useStore((s) => s.setTaskRun);
   const retryRef = useRef(0);
@@ -90,6 +91,9 @@ export function useTasks() {
             upsertTask(event.task);
           } else if (event.type === 'task_deleted') {
             removeTask(event.taskId);
+          } else if (event.type === 'subtasks_synced') {
+            setSubtasks(event.parentTaskId, event.subtasks);
+            for (const subtask of event.subtasks) upsertTask(subtask);
           } else if (event.type === 'task_runs_snapshot') {
             setTaskRuns(event.runs);
           } else if (event.type === 'task_run_updated') {
@@ -127,7 +131,7 @@ export function useTasks() {
       esRef.current = null;
       reconnectRef.current = null;
     };
-  }, [setTasks, upsertTask, removeTask, setTaskRuns, setTaskRun]);
+  }, [setTasks, upsertTask, removeTask, setSubtasks, setTaskRuns, setTaskRun]);
 
   // Refetch immediately when returning to foreground (iOS background → foreground)
   useVisibilityRefresh(() => {

@@ -118,8 +118,8 @@ export async function mergeLinkedPullRequestForTask(task: Task): Promise<GitHubM
   if (!prUrl) {
     return buildResponse(
       taskWithPr,
-      'blocked',
-      'Task has no linked GitHub PR. Add or sync a PR URL before marking it complete.',
+      'skipped_no_pr',
+      'Task has no linked GitHub PR; completion can continue without a merge.',
       null,
     );
   }

@@ -13,12 +13,15 @@ import { existsSync } from 'node:fs';
 import { basename, dirname, join } from 'node:path';
 import { resolveHermesHome } from '../paths.js';
 import {
+  getAllTasks,
+  getTask,
   getTaskByKanbanId,
   getSubtasks,
   insertTask,
   updateTask,
 } from '../db/queries.js';
 import { broadcast } from '../events.js';
+import { refreshTaskGitHubStatus } from './github-status.js';
 import type {
   DelegationStatus,
   KanbanCommentEntry,
@@ -92,6 +95,13 @@ function openKanbanDb(): Database.Database | null {
   const dbPath = getKanbanDbPath();
   if (!existsSync(dbPath)) return null;
   return new Database(dbPath, { readonly: true, fileMustExist: true });
+}
+
+const KANBAN_TASK_ID_RE = /\bt_[a-f0-9]{8}\b/gi;
+
+export function extractKanbanTaskIdsFromText(text: string | null | undefined): string[] {
+  if (!text) return [];
+  return Array.from(new Set(text.match(KANBAN_TASK_ID_RE) ?? []));
 }
 
 function parseJsonRecord(value: unknown): Record<string, unknown> {
@@ -242,10 +252,28 @@ export function appendKanbanComment(
   ]);
 }
 
+export function findBoardForKanbanTask(kanbanId: string | null): string | null {
+  if (!kanbanId) return null;
+
+  for (const board of listKanbanBoards()) {
+    const conn = openKanbanDbForBoard(board.name);
+    if (!conn) continue;
+    try {
+      const row = conn.prepare('SELECT 1 FROM tasks WHERE id = ?').get(kanbanId) as { 1: number } | undefined;
+      if (row) return board.name;
+    } finally {
+      conn.close();
+    }
+  }
+
+  return null;
+}
+
 export function getKanbanTaskInfo(kanbanId: string | null): KanbanTaskInfo | null {
   if (!kanbanId) return null;
 
-  const conn = openKanbanDb();
+  const board = findBoardForKanbanTask(kanbanId) ?? KANBAN_BOARD;
+  const conn = openKanbanDbForBoard(board);
   if (!conn) return null;
 
   try {
@@ -361,7 +389,8 @@ export function findKanbanTaskByAgentControlTaskId(acTaskId: string): KanbanTask
 export function getKanbanLogs(kanbanId: string | null, limit = 50): KanbanLogEntry[] {
   if (!kanbanId) return [];
 
-  const conn = openKanbanDb();
+  const board = findBoardForKanbanTask(kanbanId) ?? KANBAN_BOARD;
+  const conn = openKanbanDbForBoard(board);
   if (!conn) return [];
 
   try {
@@ -399,7 +428,8 @@ export function getKanbanLogs(kanbanId: string | null, limit = 50): KanbanLogEnt
 export function getKanbanRuns(kanbanId: string | null, limit = 20): KanbanRunEntry[] {
   if (!kanbanId) return [];
 
-  const conn = openKanbanDb();
+  const board = findBoardForKanbanTask(kanbanId) ?? KANBAN_BOARD;
+  const conn = openKanbanDbForBoard(board);
   if (!conn) return [];
 
   try {
@@ -452,7 +482,8 @@ export function getKanbanRuns(kanbanId: string | null, limit = 20): KanbanRunEnt
 export function getKanbanComments(kanbanId: string | null, limit = 20): KanbanCommentEntry[] {
   if (!kanbanId) return [];
 
-  const conn = openKanbanDb();
+  const board = findBoardForKanbanTask(kanbanId) ?? KANBAN_BOARD;
+  const conn = openKanbanDbForBoard(board);
   if (!conn) return [];
 
   try {
@@ -487,28 +518,68 @@ function mapKanbanStatus(kanbanStatus: string): MappedStatuses {
   switch (kanbanStatus) {
     case 'todo':
     case 'ready':
+      return { status: 'todo', delegation_status: null };
     case 'running':
+      // AgentControl's column state is the canonical user-facing progress
+      // signal. A Hermes Kanban card can remain `running` after the worker
+      // process/session has already stopped (stale claim, crash, interrupted
+      // API call, or dispatcher lag). Showing that as a delegation badge keeps
+      // stale smoke cards visually stuck in "running" even though the correct
+      // AgentControl state is simply active work in progress.
       return { status: 'in_progress', delegation_status: null };
     case 'blocked':
       return { status: 'in_progress', delegation_status: 'blocked' };
     case 'review':
-      return { status: 'in_review', delegation_status: null };
     case 'done':
       return { status: 'in_review', delegation_status: 'review' };
     case 'archived':
       return { status: 'done', delegation_status: 'done' };
     default:
-      return { status: 'in_progress', delegation_status: null };
+      return { status: 'todo', delegation_status: null };
   }
+}
+
+export function syncTaskStatusFromKanban(task: Task): { task: Task; changed: boolean } {
+  if (!task.hermes_kanban_task_id) return { task, changed: false };
+
+  const info = getKanbanTaskInfo(task.hermes_kanban_task_id);
+  if (!info) return { task, changed: false };
+
+  const mapped = mapKanbanStatus(info.status);
+  const profile = task.delegation_profile ?? extractProfileFromKanban(info);
+  const updates: Partial<Pick<Task, 'status' | 'delegation_status' | 'delegation_profile' | 'assignee'>> = {};
+
+  if (task.status !== mapped.status) updates.status = mapped.status;
+  if (task.delegation_status !== mapped.delegation_status) updates.delegation_status = mapped.delegation_status;
+  if (!task.delegation_profile && profile) updates.delegation_profile = profile;
+  if (!task.assignee && profile) updates.assignee = profile;
+
+  if (Object.keys(updates).length === 0) return { task, changed: false };
+
+  const updated = updateTask(task.id, updates);
+  if (!updated) return { task, changed: false };
+
+  broadcast({ type: 'task_updated', task: updated });
+  return { task: updated, changed: true };
 }
 
 function extractAgentControlParentId(kanbanBody: string | null): string | null {
   if (!kanbanBody) return null;
   const match = kanbanBody.match(/AgentControl parent task:.*\(([a-f0-9-]{36})\)/i);
   if (match) return match[1];
+  const labelMatch = kanbanBody.match(/AgentControl parent(?: task)?:\s*([a-f0-9-]{36})/i);
+  if (labelMatch) return labelMatch[1];
   const bareMatch = kanbanBody.match(/(?:agentcontrol_id|ac_parent):\s*([a-f0-9-]{36})\s*$/im);
   if (bareMatch) return bareMatch[1];
   return null;
+}
+
+function resolveExistingAgentControlParentId(
+  explicitParentId: string | null,
+  fallbackParentId: string,
+): string {
+  if (!explicitParentId) return fallbackParentId;
+  return getTask(explicitParentId) ? explicitParentId : fallbackParentId;
 }
 
 function extractProfileFromKanban(kanbanTask: KanbanTaskInfo): string | null {
@@ -523,12 +594,44 @@ export interface SyncResult {
   updated: number;
 }
 
-export function syncKanbanChildrenForTask(parentTask: Task): SyncResult {
+function broadcastSubtasksSynced(result: SyncResult): void {
+  broadcast({
+    type: 'subtasks_synced',
+    parentTaskId: result.parent.id,
+    subtasks: result.subtasks,
+    imported: result.imported,
+    updated: result.updated,
+  });
+}
+
+export async function syncKanbanChildrenForTask(
+  parentTask: Task,
+  options?: { extraChildIds?: string[]; refreshGitHub?: boolean },
+): Promise<SyncResult> {
   if (!parentTask.hermes_kanban_task_id) {
     throw new Error('Parent task has no hermes_kanban_task_id mapping');
   }
 
-  const children = getKanbanChildren(parentTask.hermes_kanban_task_id);
+  const shouldRefreshGitHub = options?.refreshGitHub ?? true;
+  if (shouldRefreshGitHub) {
+    const refreshedParent = await refreshTaskGitHubStatus(parentTask);
+    if (refreshedParent) parentTask = refreshedParent;
+  }
+  const parentKanbanId = parentTask.hermes_kanban_task_id;
+  if (!parentKanbanId) {
+    throw new Error('Parent task lost hermes_kanban_task_id mapping during refresh');
+  }
+
+  const linkedChildren = getKanbanChildren(parentKanbanId);
+  const linkedIds = new Set(linkedChildren.map((child) => child.kanban_id));
+  const childrenById = new Map(linkedChildren.map((child) => [child.kanban_id, child]));
+  for (const childId of options?.extraChildIds ?? []) {
+    if (childId === parentKanbanId || childrenById.has(childId)) continue;
+    const child = getKanbanTaskInfo(childId);
+    if (!child) continue;
+    childrenById.set(child.kanban_id, child);
+  }
+  const children = Array.from(childrenById.values());
   let imported = 0;
   let updated = 0;
 
@@ -568,7 +671,21 @@ export function syncKanbanChildrenForTask(parentTask: Task): SyncResult {
     }
 
     if (existing) {
-      const result = updateTask(existing.id, taskUpdates);
+      const refreshedExisting = shouldRefreshGitHub
+        ? await refreshTaskGitHubStatus(existing)
+        : null;
+      const existingWithPr = refreshedExisting ?? existing;
+      const result = updateTask(existing.id, {
+        ...taskUpdates,
+        github_pr_url: existingWithPr.github_pr_url ?? taskUpdates.github_pr_url,
+        github_pr_number: existingWithPr.github_pr_number ?? taskUpdates.github_pr_number,
+        github_pr_state: existingWithPr.github_pr_state ?? taskUpdates.github_pr_state,
+        github_pr_head_ref: existingWithPr.github_pr_head_ref ?? taskUpdates.github_pr_head_ref,
+        github_pr_head_sha: existingWithPr.github_pr_head_sha ?? taskUpdates.github_pr_head_sha,
+        github_checks_status: existingWithPr.github_checks_status ?? taskUpdates.github_checks_status,
+        github_checks_summary: existingWithPr.github_checks_summary ?? taskUpdates.github_checks_summary,
+        github_checks_updated_at: existingWithPr.github_checks_updated_at ?? taskUpdates.github_checks_updated_at,
+      });
       if (result) {
         updated++;
         broadcast({ type: 'task_updated', task: result });
@@ -577,7 +694,7 @@ export function syncKanbanChildrenForTask(parentTask: Task): SyncResult {
     }
 
     const explicitParentId = extractAgentControlParentId(child.body);
-    const acParentId = explicitParentId || parentTask.id;
+    const acParentId = resolveExistingAgentControlParentId(explicitParentId, parentTask.id);
     const created = insertTask({
       title: child.title,
       description: child.body ?? '',
@@ -588,7 +705,7 @@ export function syncKanbanChildrenForTask(parentTask: Task): SyncResult {
       priority: null,
       hermes_kanban_task_id: child.kanban_id,
       delegation_profile: profile,
-      external_source: 'hermes-kanban-sync',
+      external_source: linkedIds.has(child.kanban_id) ? 'hermes-kanban-sync' : 'hermes-kanban-chat-reference',
       github_pr_url: taskUpdates.github_pr_url,
       github_pr_number: taskUpdates.github_pr_number,
       github_pr_state: taskUpdates.github_pr_state,
@@ -603,7 +720,48 @@ export function syncKanbanChildrenForTask(parentTask: Task): SyncResult {
   }
 
   const subtasks = getSubtasks(parentTask.id);
-  return { parent: parentTask, subtasks, imported, updated };
+  const result = { parent: parentTask, subtasks, imported, updated };
+  if (imported > 0 || updated > 0) broadcastSubtasksSynced(result);
+  return result;
+}
+
+let kanbanLiveSyncTimer: ReturnType<typeof setInterval> | null = null;
+let kanbanLiveSyncRunning = false;
+
+async function syncAllMappedKanbanParents(): Promise<void> {
+  if (kanbanLiveSyncRunning) return;
+  kanbanLiveSyncRunning = true;
+  try {
+    const parents = getAllTasks()
+      .filter((task) => task.hermes_kanban_task_id && !task.parent_task_id);
+
+    for (const parent of parents) {
+      try {
+        await syncKanbanChildrenForTask(parent, { refreshGitHub: false });
+      } catch (error) {
+        console.warn(
+          `[kanban-bridge] Live child sync skipped for ${parent.id}:`,
+          error instanceof Error ? error.message : error,
+        );
+      }
+    }
+  } finally {
+    kanbanLiveSyncRunning = false;
+  }
+}
+
+export function startKanbanLiveSync(intervalMs = 2_000): () => void {
+  if (kanbanLiveSyncTimer) return stopKanbanLiveSync;
+  void syncAllMappedKanbanParents();
+  kanbanLiveSyncTimer = setInterval(() => void syncAllMappedKanbanParents(), intervalMs);
+  kanbanLiveSyncTimer.unref?.();
+  return stopKanbanLiveSync;
+}
+
+export function stopKanbanLiveSync(): void {
+  if (!kanbanLiveSyncTimer) return;
+  clearInterval(kanbanLiveSyncTimer);
+  kanbanLiveSyncTimer = null;
 }
 
 // ── Multi-Board support ────────────────────────────────────────────────

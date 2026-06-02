@@ -8,6 +8,7 @@ import {
   fetchBoardTaskBlockers,
   type KanbanBoardSummary,
 } from '../lib/api';
+import { useStore } from '../lib/store';
 import type { KanbanTaskInfo } from '@shared/types';
 
 // ── Helpers ────────────────────────────────────────────────────────────
@@ -252,8 +253,9 @@ function TaskDetail({
 export function KanbanPage() {
   const [boards, setBoards] = useState<KanbanBoardSummary[]>([]);
   const [tasks, setTasks] = useState<KanbanTaskInfo[]>([]);
-  const [selectedBoard, setSelectedBoard] = useState<string | null>(null);
-  const [selectedTask, setSelectedTask] = useState<string | null>(null);
+  const selectedBoard = useStore((s) => s.kanbanSelectedBoard);
+  const selectedTask = useStore((s) => s.kanbanSelectedTask);
+  const setKanbanSelection = useStore((s) => s.setKanbanSelection);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
@@ -262,15 +264,17 @@ export function KanbanPage() {
       .catch(console.error);
   }, []);
 
-  function selectBoard(name: string) {
-    setSelectedBoard(name);
-    setSelectedTask(null);
-    setTasks([]);
+  useEffect(() => {
+    if (!selectedBoard) return;
     setLoading(true);
-    fetchBoardTasks(name)
+    fetchBoardTasks(selectedBoard)
       .then((res) => setTasks(res.tasks))
       .catch(console.error)
       .finally(() => setLoading(false));
+  }, [selectedBoard]);
+
+  function selectBoard(name: string) {
+    setKanbanSelection(name, null);
   }
 
   const selectedBoardSummary = boards.find((b) => b.name === selectedBoard);
@@ -283,7 +287,7 @@ export function KanbanPage() {
       <TaskDetail
         boardName={selectedBoard}
         task={selectedTaskInfo}
-        onBack={() => setSelectedTask(null)}
+        onBack={() => setKanbanSelection(selectedBoard, null)}
       />
     );
   } else if (selectedBoardSummary) {
@@ -318,7 +322,7 @@ export function KanbanPage() {
                 key={t.kanban_id}
                 task={t}
                 active={selectedTask === t.kanban_id}
-                onClick={() => setSelectedTask(t.kanban_id)}
+                onClick={() => setKanbanSelection(selectedBoard, t.kanban_id)}
               />
             ))}
           </div>
