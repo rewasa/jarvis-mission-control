@@ -675,7 +675,7 @@ export async function syncKanbanChildrenForTask(
         ? await refreshTaskGitHubStatus(existing)
         : null;
       const existingWithPr = refreshedExisting ?? existing;
-      const result = updateTask(existing.id, {
+      const desiredUpdates = {
         ...taskUpdates,
         github_pr_url: existingWithPr.github_pr_url ?? taskUpdates.github_pr_url,
         github_pr_number: existingWithPr.github_pr_number ?? taskUpdates.github_pr_number,
@@ -685,10 +685,22 @@ export async function syncKanbanChildrenForTask(
         github_checks_status: existingWithPr.github_checks_status ?? taskUpdates.github_checks_status,
         github_checks_summary: existingWithPr.github_checks_summary ?? taskUpdates.github_checks_summary,
         github_checks_updated_at: existingWithPr.github_checks_updated_at ?? taskUpdates.github_checks_updated_at,
-      });
-      if (result) {
-        updated++;
-        broadcast({ type: 'task_updated', task: result });
+      };
+      const changedUpdates: typeof taskUpdates = {};
+      const updateKeys = Object.keys(desiredUpdates) as (keyof typeof taskUpdates)[];
+      for (const key of updateKeys) {
+        const value = desiredUpdates[key];
+        if (existingWithPr[key] !== value) {
+          Object.assign(changedUpdates, { [key]: value });
+        }
+      }
+
+      if (Object.keys(changedUpdates).length > 0) {
+        const result = updateTask(existing.id, changedUpdates);
+        if (result) {
+          updated++;
+          broadcast({ type: 'task_updated', task: result });
+        }
       }
       continue;
     }
