@@ -13,10 +13,20 @@ interface ColumnProps {
   tasks: Task[];
   taskRuns: Map<string, TaskRunState>;
   isLast?: boolean;
+  isMobileActive?: boolean;
+  onMobileActivate: () => void;
   onRequestDeleteAll: (status: TaskStatus) => void;
 }
 
-export function Column({ status, tasks, taskRuns, isLast = false, onRequestDeleteAll }: ColumnProps) {
+export function Column({
+  status,
+  tasks,
+  taskRuns,
+  isLast = false,
+  isMobileActive = false,
+  onMobileActivate,
+  onRequestDeleteAll,
+}: ColumnProps) {
   const { label } = STATUS_META[status];
   const { setNodeRef, isOver } = useDroppable({ id: status });
   const navigate = useNavigate();
@@ -31,9 +41,15 @@ export function Column({ status, tasks, taskRuns, isLast = false, onRequestDelet
   }, []);
 
   return (
-    <div className={`group/column flex flex-col min-w-[min(82vw,272px)] max-w-[360px] flex-[0_0_min(82vw,360px)] snap-start sm:min-w-[272px] sm:flex-1 ${
-      isLast ? 'pr-0' : 'border-r border-zinc-200 pr-6 dark:border-zinc-800'
-    }`}>
+    <div
+      onPointerDown={onMobileActivate}
+      onFocusCapture={onMobileActivate}
+      className={`group/column flex flex-col min-w-[min(82vw,272px)] max-w-[360px] flex-[0_0_min(82vw,360px)] snap-start sm:min-w-[272px] sm:flex-1 ${
+        isMobileActive ? 'order-first md:order-none' : 'hidden md:flex'
+      } ${
+        isLast ? 'pr-0' : 'border-r border-zinc-200 pr-6 dark:border-zinc-800'
+      }`}
+    >
       <div className="flex items-center gap-2 mb-3 pl-1">
         <StatusIcon status={status} />
         <h2 className="text-xs font-medium tracking-wider text-zinc-500 dark:text-zinc-400 uppercase">{label}</h2>

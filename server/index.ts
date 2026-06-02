@@ -5,6 +5,7 @@ import { createServer, type Server } from 'node:http';
 import app, { adapter } from './app.js';
 import { mountFrontend, type FrontendCleanup } from './frontend.js';
 import { ensureHermesExternalSkillsDir } from './routes/skills.js';
+import { startKanbanLiveSync, stopKanbanLiveSync } from './services/kanban-bridge.js';
 import { attachTerminalWebSocket } from './terminal.js';
 
 const PORT = parseInt(process.env.PORT || '7460', 10);
@@ -64,6 +65,7 @@ async function main() {
 
   closeFrontend = await mountFrontend(app, httpServer);
   closeTerminal = attachTerminalWebSocket(httpServer);
+  startKanbanLiveSync();
   try {
     await adapter.start();
   } catch (error) {
@@ -110,6 +112,7 @@ async function shutdown(reason: ShutdownReason, exitCode = 0): Promise<void> {
     closeHttpServer(),
     closeFrontend(),
     closeTerminal(),
+    Promise.resolve(stopKanbanLiveSync()),
     adapter.stop(),
   ]);
 

@@ -79,6 +79,7 @@ export function Header() {
   const isSkills = location.pathname === '/skills' || location.pathname.startsWith('/skills/');
   const isFiles = location.pathname === '/files';
   const isTerminal = location.pathname === '/terminal';
+  const isTaskDetail = Boolean(taskId);
 
   let title = 'Tasks';
   let showParent = false;
@@ -102,7 +103,7 @@ export function Header() {
     showParent = true;
   }
 
-  if (pageHeader) {
+  if (pageHeader && !isTaskDetail) {
     title = pageHeader.crumbs[pageHeader.crumbs.length - 1]?.label ?? 'AgentControl';
     truncate = true;
   }
@@ -116,6 +117,8 @@ export function Header() {
     document.title = trimmed + ' \u00b7 AgentControl';
   }, [task?.title, task?.id, title, location.pathname]);
 
+  if (isTaskDetail) return null;
+
   if (pageHeader) {
     return (
       <header className="flex min-h-[49px] items-center justify-between gap-3 border-b border-zinc-200 bg-surface px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-950 sm:min-h-[55px] sm:gap-4 sm:px-6 sm:py-3">
@@ -126,9 +129,9 @@ export function Header() {
   }
 
   return (
-    <header className="flex items-center border-b border-zinc-200 bg-surface px-4 py-2.5 dark:border-zinc-800 dark:bg-zinc-950 sm:px-6 sm:py-3">
+    <header className="flex items-center border-b border-zinc-200 bg-surface px-4 py-1.5 dark:border-zinc-800 dark:bg-zinc-950 sm:px-6 sm:py-2">
       <div className="flex items-center gap-2 min-w-0">
-        {showParent && (
+        {showParent && !isTaskDetail && (
           <>
             <Link to="/" className="text-sm font-medium text-zinc-400 dark:text-zinc-500 hover:text-zinc-700 dark:hover:text-zinc-200 transition-colors shrink-0">
               Tasks

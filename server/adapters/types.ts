@@ -64,6 +64,8 @@ export interface AgentAdapter {
 
   interruptChat(sessionId: string, reason?: string): Promise<boolean>;
 
+  steerChat(sessionId: string, message: string): Promise<boolean>;
+
   healthCheck(): Promise<boolean>;
 
   getMessages(sessionId: string, taskId: string): Promise<TaskMessage[]>;

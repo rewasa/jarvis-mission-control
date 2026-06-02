@@ -119,6 +119,7 @@ export type BoardEvent =
   | { type: 'task_created'; task: Task }
   | { type: 'task_updated'; task: Task }
   | { type: 'task_deleted'; taskId: string }
+  | { type: 'subtasks_synced'; parentTaskId: string; subtasks: Task[]; imported: number; updated: number }
   | { type: 'task_runs_snapshot'; runs: TaskRunState[] }
   | { type: 'task_run_updated'; run: TaskRunState };
 
@@ -330,7 +331,7 @@ export interface GitHubStatusResponse {
   github_checks_updated_at: number | null;
 }
 
-export type GitHubMergeStatus = 'merged' | 'auto_merge_enabled' | 'blocked';
+export type GitHubMergeStatus = 'merged' | 'auto_merge_enabled' | 'skipped_no_pr' | 'blocked';
 
 export interface GitHubMergeResponse extends GitHubStatusResponse {
   status: GitHubMergeStatus;
@@ -340,6 +341,12 @@ export interface GitHubMergeResponse extends GitHubStatusResponse {
   mergeStateStatus: string | null;
   mergeable: string | null;
   baseRefName: string | null;
+}
+
+export interface CompleteTaskResponse {
+  task: Task;
+  subtasksCompleted?: number;
+  githubMerge?: GitHubMergeResponse | null;
 }
 
 export interface ScheduledTaskOrigin {

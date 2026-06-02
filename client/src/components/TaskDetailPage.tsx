@@ -1,12 +1,13 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
-import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock, ArrowRight, MessageSquareText, X, Activity, ExternalLink, GitPullRequest, RefreshCw, Bot, Link2, Save } from 'lucide-react';
+import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock, ArrowRight, MessageSquareText, X, Activity, ExternalLink, GitPullRequest, RefreshCw, Bot, Link2, Save, FileText, Radio, ListTree } from 'lucide-react';
+
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
 import { useStore, optimisticMoveTask } from '../lib/store';
 import { toast } from 'sonner';
-import { deleteTask, fetchSubtasks, fetchTask, fetchTaskKanban, fetchTaskKanbanLogs, fetchTaskGitHubStatus, linkTaskGitHubPr, refreshTaskGitHubStatus, syncTaskKanbanSubtasks, patchTask, moveTask, markTaskViewed, ApiError } from '../lib/api';
+import { deleteTask, fetchSubtasks, fetchTask, fetchTaskKanban, fetchTaskKanbanLogs, fetchTaskGitHubStatus, linkTaskGitHubPr, refreshTaskGitHubStatus, syncTaskKanbanSubtasks, syncTaskKanbanSubtasksFromChat, patchTask, moveTask, markTaskViewed, ApiError } from '../lib/api';
 import { DELEGATION_STATUSES, TASK_STATUSES } from '@shared/types';
 import { STATUS_META } from '../lib/constants';
 import { timeAgo } from '../lib/format';
@@ -83,83 +84,188 @@ function shortId(value: string | null | undefined, length = 8): string | null {
   return value.length > length ? value.slice(0, length) : value;
 }
 
-function KanbanPanel({ info, logs }: { info: KanbanTaskResponse | null; logs: KanbanLogsResponse | null }) {
+function KanbanPanel({
+  info,
+  logs,
+  github,
+  onGitHubRefresh,
+  onGitHubEdit,
+}: {
+  info: KanbanTaskResponse | null;
+  logs: KanbanLogsResponse | null;
+  github: GitHubStatusState;
+  onGitHubRefresh: () => void;
+  onGitHubEdit: () => void;
+}) {
   if (!info?.kanban_id) return null;
   const kanban = info.kanban;
   const latestRun = logs?.runs?.[0] ?? null;
-  const latestComment = logs?.comments?.[0] ?? null;
+  const latestComment = logs?.comments?.find((comment) => comment.body?.trim()) ?? logs?.comments?.[0] ?? null;
   const eventRows = logs?.logs ?? [];
-  const visibleEvents = eventRows.slice(0, 4);
+  const latestEvent = eventRows[0] ?? null;
   const profile = kanban?.assignee ?? info.delegation_profile;
+  const hasGitHub = Boolean(github.prNumber || github.prUrl || github.checksStatus);
+  const prStateLabel = github.prState ? (github.prState === 'OPEN' ? 'Open' : github.prState === 'MERGED' ? 'Merged' : 'Closed') : null;
+  const checkTint = GITHUB_CHECK_TINTS[github.checksStatus ?? 'unknown'] ?? GITHUB_CHECK_TINTS.unknown;
+  const latestPreview = latestComment?.body ?? (latestEvent ? payloadPreview(latestEvent.payload) : null);
 
   return (
-    <section className="rounded-2xl border border-purple-100 bg-white/90 p-3 shadow-sm shadow-purple-100/50 backdrop-blur dark:border-purple-900/40 dark:bg-zinc-900/80 dark:shadow-black/20">
-      <div className="flex flex-col gap-3">
-        <div className="min-w-0 flex-1">
-          <div className="mb-2 flex flex-wrap items-center gap-2">
-            <span className="inline-flex items-center gap-1.5 rounded-full border border-purple-200 bg-purple-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-purple-700 dark:border-purple-900/70 dark:bg-purple-950/40 dark:text-purple-300">
-              <Activity size={12} strokeWidth={2.5} />
-              Kanban live
+    <section className="overflow-hidden rounded-xl border border-zinc-200 bg-white/90 shadow-sm backdrop-blur dark:border-zinc-800 dark:bg-zinc-900/80">
+      <div className="flex min-w-0 flex-col gap-2 px-3 py-2 text-[11px] sm:px-3.5">
+        <div className="flex min-w-0 items-center gap-1.5 overflow-x-auto overscroll-x-contain pb-0.5 [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-purple-200 bg-purple-50 px-2 py-1 font-semibold uppercase tracking-wide text-purple-700 dark:border-purple-900/70 dark:bg-purple-950/40 dark:text-purple-300">
+            <Activity size={10} strokeWidth={2.5} />
+            Kanban live
+          </span>
+          <span className="shrink-0 rounded-full bg-zinc-100 px-2 py-1 font-mono font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
+            {shortId(info.kanban_id, 10)}
+          </span>
+          {profile && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-1 font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+              <Bot size={10} strokeWidth={2.5} />
+              {profile}
             </span>
-            <span className="rounded-full bg-zinc-100 px-2 py-0.5 font-mono text-[11px] font-medium text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-              {shortId(info.kanban_id, 10)}
-            </span>
-            {profile && (
-              <span className="inline-flex items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-0.5 text-[11px] font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
-                <Bot size={11} strokeWidth={2.5} />
-                {profile}
-              </span>
-            )}
-            {kanban?.status && (
-              <span className={`rounded-full border px-2 py-0.5 text-[11px] font-semibold ${kanbanStatusTint(kanban.status)}`}>
-                {kanban.status}
-              </span>
-            )}
-          </div>
-          <p className="line-clamp-2 text-sm leading-5 text-zinc-700 dark:text-zinc-200">
-            {kanban?.summary || kanban?.title || 'Real Hermes Kanban task linked to this AgentControl subtask.'}
-          </p>
-          {latestComment && (
-            <div className="mt-2 rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 text-xs text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950/70 dark:text-zinc-300">
-              <span className="font-semibold text-zinc-800 dark:text-zinc-100">Latest comment</span>
-              <span className="ml-1 text-zinc-400">by {latestComment.author}</span>
-              <p className="mt-1 line-clamp-2">{latestComment.body}</p>
-            </div>
           )}
+          {kanban?.status && (
+            <span className={`shrink-0 rounded-full border px-2 py-1 font-semibold ${kanbanStatusTint(kanban.status)}`}>
+              {kanban.status}
+            </span>
+          )}
+          {latestRun && (
+            <span className="shrink-0 rounded-full border border-zinc-200 bg-zinc-50 px-2 py-1 font-mono font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-300">
+              run #{latestRun.run_id} {latestRun.status}
+            </span>
+          )}
+          {(hasGitHub || github.syncError) && (
+            <>
+              <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-blue-200 bg-blue-50 px-2 py-1 font-semibold text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-300">
+                <GitPullRequest size={10} strokeWidth={2.5} />
+                {github.prNumber ? `PR #${github.prNumber}` : 'PR'}
+              </span>
+              {prStateLabel && (
+                <span className="shrink-0 rounded-full border border-zinc-200 bg-white px-2 py-1 font-medium text-zinc-600 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300">
+                  {prStateLabel}
+                </span>
+              )}
+              {(github.checksStatus || hasGitHub) && (
+                <span className={`shrink-0 rounded-full border px-2 py-1 font-semibold ${checkTint}`}>
+                  {github.checksStatus ?? 'unknown'}
+                </span>
+              )}
+            </>
+          )}
+          {github.syncError && <span className="shrink-0 text-red-500 dark:text-red-400">{github.syncError}</span>}
         </div>
 
-        <div className="grid grid-cols-2 gap-2 text-[11px]">
-          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
-            <div className="text-zinc-400 dark:text-zinc-500">Run</div>
-            <div className="mt-0.5 truncate font-semibold text-zinc-800 dark:text-zinc-100">
-              {latestRun ? `#${latestRun.run_id} ${latestRun.status}` : 'No run yet'}
+        <div className="grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-zinc-100 pt-2 dark:border-zinc-800/70">
+          <div className="min-w-0 text-zinc-500 dark:text-zinc-400">
+            <div className="truncate font-medium text-zinc-700 dark:text-zinc-200">
+              {latestEvent ? formatKanbanEventLabel(latestEvent.event_kind) : 'No events yet'}
             </div>
-          </div>
-          <div className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
-            <div className="text-zinc-400 dark:text-zinc-500">Events</div>
-            <div className="mt-0.5 font-semibold text-zinc-800 dark:text-zinc-100">{eventRows.length}</div>
-          </div>
-        </div>
-      </div>
-
-      <div className="mt-3 grid gap-2">
-        {visibleEvents.length > 0 ? visibleEvents.map((entry) => {
-          const preview = payloadPreview(entry.payload);
-          return (
-            <div key={entry.log_id} className="rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2 dark:border-zinc-800 dark:bg-zinc-950/60">
-              <div className="flex items-center justify-between gap-2">
-                <span className="truncate text-[11px] font-semibold text-zinc-700 dark:text-zinc-200">{formatKanbanEventLabel(entry.event_kind)}</span>
-                {entry.run_id && <span className="shrink-0 font-mono text-[10px] text-zinc-400">#{entry.run_id}</span>}
+            {latestPreview && (
+              <div className="mt-0.5 line-clamp-2 break-words leading-snug">
+                {latestPreview}
               </div>
-              {preview && <p className="mt-1 line-clamp-2 text-[11px] leading-4 text-zinc-500 dark:text-zinc-400">{preview}</p>}
-            </div>
-          );
-        }) : (
-          <div className="rounded-xl border border-dashed border-zinc-200 bg-zinc-50 px-3 py-4 text-center text-[11px] text-zinc-400 dark:border-zinc-800 dark:bg-zinc-950/60 dark:text-zinc-500">
-            No Kanban events yet. The linked task is visible; logs appear here as the worker runs.
+            )}
           </div>
-        )}
+          <div className="flex shrink-0 items-center gap-1.5">
+            <button
+              onClick={onGitHubRefresh}
+              disabled={github.refreshing}
+              title="Refresh GitHub status"
+              className="inline-flex min-h-[32px] shrink-0 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:bg-zinc-100 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+            >
+              {github.refreshing ? <Loader2 size={12} className="animate-spin" /> : <RefreshCw size={12} strokeWidth={2.5} />}
+              Sync
+            </button>
+            {github.prUrl && (
+              <a
+                href={github.prUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="inline-flex min-h-[32px] shrink-0 items-center gap-1 rounded-lg border border-zinc-200 bg-white px-2 font-medium text-zinc-600 transition-colors hover:border-zinc-300 hover:bg-zinc-100 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:bg-zinc-800"
+              >
+                <ExternalLink size={12} strokeWidth={2.5} />
+                Open
+              </a>
+            )}
+            <button
+              type="button"
+              onClick={onGitHubEdit}
+              className="inline-flex min-h-[32px] shrink-0 items-center gap-1 rounded-lg border border-blue-200 bg-blue-50 px-2 font-semibold text-blue-700 transition-colors hover:border-blue-300 hover:bg-blue-100 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-300 dark:hover:bg-blue-950/70"
+            >
+              <Link2 size={12} strokeWidth={2.5} />
+              {hasGitHub ? 'Edit' : 'Link PR'}
+            </button>
+          </div>
+        </div>
       </div>
+    </section>
+  );
+}
+
+function TranscriptLog({ taskId, hasKanban, refreshKey, compact = false }: { taskId: string; hasKanban: boolean; refreshKey: number; compact?: boolean }) {
+  const [content, setContent] = useState('');
+  const [error, setError] = useState<string | null>(null);
+  const scrollerRef = useRef<HTMLPreElement>(null);
+
+  useEffect(() => {
+    if (!hasKanban) {
+      setContent('');
+      setError(null);
+      return;
+    }
+
+    let cancelled = false;
+    const controller = new AbortController();
+    fetch(`/api/tasks/${encodeURIComponent(taskId)}/kanban/transcript`, {
+      credentials: 'same-origin',
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        const text = await res.text();
+        if (!res.ok) throw new Error(text.trim() || `HTTP ${res.status}`);
+        return text;
+      })
+      .then((text) => {
+        if (cancelled) return;
+        setContent(text);
+        setError(null);
+      })
+      .catch((err) => {
+        if (cancelled || controller.signal.aborted) return;
+        setError(err instanceof Error ? err.message : 'Transcript unavailable');
+      });
+
+    return () => {
+      cancelled = true;
+      controller.abort();
+    };
+  }, [taskId, hasKanban, refreshKey]);
+
+  useEffect(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [content]);
+
+  if (!hasKanban) return null;
+
+  return (
+    <section className={`${compact ? 'flex-[0.45]' : 'flex-1'} flex min-h-0 flex-col overflow-hidden rounded-2xl border border-amber-100 bg-zinc-950 shadow-sm shadow-amber-100/50 dark:border-amber-900/40 dark:shadow-black/20`}>
+      <div className="flex flex-wrap items-center gap-2 border-b border-amber-100 bg-white px-3 py-2 dark:border-amber-900/40 dark:bg-zinc-900">
+        <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-amber-700 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-300">
+          <FileText size={12} strokeWidth={2.5} />
+          Worker Transcript
+        </span>
+        <span className="text-xs text-zinc-400">live log from Hermes worker</span>
+      </div>
+      <pre
+        ref={scrollerRef}
+        className="min-h-0 flex-1 overflow-auto whitespace-pre-wrap break-words bg-zinc-950 p-3 font-mono text-[11px] leading-5 text-zinc-200"
+      >
+        {error ? `Transcript unavailable: ${error}` : content || 'Loading worker transcript...'}
+      </pre>
     </section>
   );
 }
@@ -170,12 +276,16 @@ function GitHubPanel({
   prDraft,
   onPrDraftChange,
   onLink,
+  compact = false,
+  openEditorSignal = 0,
 }: {
   status: GitHubStatusState;
   onRefresh: () => void;
   prDraft: string;
   onPrDraftChange: (value: string) => void;
   onLink: (nextPrUrl?: string | null) => void;
+  compact?: boolean;
+  openEditorSignal?: number;
 }) {
   const [showEditor, setShowEditor] = useState(false);
   const hasGitHub = Boolean(status.prNumber || status.prUrl || status.checksStatus);
@@ -185,13 +295,18 @@ function GitHubPanel({
     ? status.checksSummary || 'PR linked and synced.'
     : 'No PR linked yet.';
 
+  useEffect(() => {
+    if (openEditorSignal > 0) setShowEditor(true);
+  }, [openEditorSignal]);
+
   const handleLinkAndClose = () => {
     onLink();
     if (prDraft.trim()) setShowEditor(false);
   };
 
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/80">
+    <section className={compact ? "contents" : "rounded-2xl border border-zinc-200 bg-white p-3 shadow-sm dark:border-zinc-800 dark:bg-zinc-900/80"}>
+      {!compact && (
       <div className="flex flex-col gap-3 text-xs">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-200 bg-blue-50 px-2 py-0.5 text-[11px] font-semibold text-blue-700 dark:border-blue-900/70 dark:bg-blue-950/40 dark:text-blue-300">
@@ -248,6 +363,7 @@ function GitHubPanel({
           </button>
         </div>
       </div>
+      )}
 
       {showEditor && createPortal(
         <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/40 px-4 backdrop-blur-sm" onMouseDown={() => setShowEditor(false)}>
@@ -312,6 +428,14 @@ function isKanbanSubtask(subtask: Task): boolean {
   return Boolean(subtask.hermes_kanban_task_id || subtask.external_source === 'hermes-kanban-sync');
 }
 
+function getEffectiveDelegationStatus(subtask: Task): DelegationStatus | null {
+  if (subtask.delegation_status) return subtask.delegation_status;
+  if (subtask.status === 'done') return 'done';
+  if (subtask.status === 'in_review') return 'review';
+  if (subtask.status === 'in_progress') return 'running';
+  return null;
+}
+
 function kanbanStatusTint(status: string | null): string {
   switch (status) {
     case 'done':
@@ -328,11 +452,12 @@ function kanbanStatusTint(status: string | null): string {
 
 function sortSubtasksForTriage(subtasks: Task[]): Task[] {
   const rank = (subtask: Task) => {
-    if (subtask.delegation_status === 'blocked') return 0;
-    if (subtask.delegation_status === 'running') return 1;
-    if (subtask.status === 'in_review' || subtask.delegation_status === 'review') return 2;
-    if (subtask.status === 'todo' || subtask.status === 'in_progress') return 3;
-    if (subtask.status === 'done' || subtask.delegation_status === 'done') return 4;
+    const effectiveStatus = getEffectiveDelegationStatus(subtask);
+    if (effectiveStatus === 'blocked') return 0;
+    if (effectiveStatus === 'running') return 1;
+    if (effectiveStatus === 'review') return 2;
+    if (subtask.status === 'todo') return 3;
+    if (effectiveStatus === 'done') return 4;
     return 5;
   };
   return [...subtasks].sort((a, b) => rank(a) - rank(b) || b.updated_at - a.updated_at);
@@ -341,20 +466,21 @@ function sortSubtasksForTriage(subtasks: Task[]): Task[] {
 function SubtaskRow({ subtask }: { subtask: Task }) {
   const statusMeta = STATUS_META[subtask.status];
   const kanbanBacked = isKanbanSubtask(subtask);
+  const effectiveDelegationStatus = getEffectiveDelegationStatus(subtask);
   const profile = subtask.delegation_profile ?? subtask.assignee;
   const prLabel = subtask.github_pr_number ? `PR #${subtask.github_pr_number}` : null;
 
   return (
     <Link
       to={`/tasks/${subtask.id}`}
-      className="group block rounded-xl border border-zinc-200 bg-white p-3 shadow-sm shadow-zinc-200/40 transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900/90 dark:shadow-black/20 dark:hover:border-zinc-700"
+      className="group block rounded-xl border border-zinc-200 bg-white p-2.5 shadow-sm shadow-zinc-200/40 transition-[border-color,box-shadow,transform] hover:-translate-y-0.5 hover:border-zinc-300 hover:shadow-md dark:border-zinc-800 dark:bg-zinc-900/90 dark:shadow-black/20 dark:hover:border-zinc-700"
     >
       <div className="mb-2 flex items-start gap-2">
         <span className={`mt-0.5 inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border ${kanbanBacked ? 'border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900/70 dark:bg-purple-950/30 dark:text-purple-300' : 'border-zinc-200 bg-zinc-50 text-zinc-500 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-400'}`}>
           {kanbanBacked ? <Bot size={13} strokeWidth={2.5} /> : <GitBranch size={13} strokeWidth={2.5} />}
         </span>
         <div className="min-w-0 flex-1">
-          <div className="line-clamp-2 text-sm font-semibold leading-5 text-zinc-900 group-hover:text-zinc-950 dark:text-zinc-100 dark:group-hover:text-white">
+          <div className="line-clamp-1 text-sm font-semibold leading-5 text-zinc-900 group-hover:text-zinc-950 dark:text-zinc-100 dark:group-hover:text-white">
             {subtask.title}
           </div>
           <div className="mt-1 flex flex-wrap items-center gap-1.5">
@@ -376,20 +502,20 @@ function SubtaskRow({ subtask }: { subtask: Task }) {
           </div>
         </div>
       </div>
-      <div className="flex flex-wrap items-center gap-1.5">
+      <div className="flex flex-wrap items-center gap-1">
         <span className={`inline-flex items-center gap-1 rounded-full px-1.5 py-0.5 text-[10px] font-medium ${statusMeta.tint}`}>
           <StatusIcon status={subtask.status} />
           {statusMeta.label}
         </span>
-        <DelegationBadge status={subtask.delegation_status} />
+        <DelegationBadge status={effectiveDelegationStatus} />
         {kanbanBacked && (
-          <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${kanbanStatusTint(subtask.delegation_status)}`}>
+          <span className={`inline-flex items-center gap-1 rounded-full border px-1.5 py-0.5 text-[10px] font-semibold ${kanbanStatusTint(effectiveDelegationStatus)}`}>
             <Activity size={10} strokeWidth={2.5} />
             Kanban
           </span>
         )}
       </div>
-      <div className="mt-2 flex items-center justify-between text-[10px] text-zinc-400 dark:text-zinc-500">
+      <div className="mt-1.5 flex items-center justify-between text-[10px] text-zinc-400 dark:text-zinc-500">
         <span>{timeAgo(subtask.updated_at)}</span>
         <span className="inline-flex items-center gap-0.5 font-medium text-zinc-500 group-hover:text-zinc-700 dark:text-zinc-400 dark:group-hover:text-zinc-200">
           <MessageSquareText size={10} strokeWidth={2.5} />
@@ -401,21 +527,35 @@ function SubtaskRow({ subtask }: { subtask: Task }) {
   );
 }
 
-function SubtasksSidebar({ subtasks, onSync, syncing }: { subtasks: Task[]; onSync?: () => void; syncing?: boolean }) {
-  const doneCount = subtasks.filter((s) => s.status === 'done').length;
-  const runningCount = subtasks.filter((s) => s.delegation_status === 'running').length;
-  const blockedCount = subtasks.filter((s) => s.delegation_status === 'blocked').length;
+function SubtasksSidebar({ subtasks, live, className = '' }: { subtasks: Task[]; live?: boolean; className?: string }) {
+  const [expanded, setExpanded] = useState(false);
+  const stats = subtasks.reduce(
+    (acc, subtask) => {
+      const effectiveStatus = getEffectiveDelegationStatus(subtask);
+      if (effectiveStatus === 'done') acc.done += 1;
+      if (effectiveStatus === 'running') acc.running += 1;
+      if (effectiveStatus === 'blocked') acc.blocked += 1;
+      if (effectiveStatus === 'review') acc.review += 1;
+      return acc;
+    },
+    { done: 0, running: 0, blocked: 0, review: 0 },
+  );
+  const doneCount = stats.done;
+  const runningCount = stats.running;
+  const blockedCount = stats.blocked;
+  const reviewCount = stats.review;
+  const activeCount = runningCount + reviewCount + blockedCount;
   const kanbanCount = subtasks.filter(isKanbanSubtask).length;
-  const progress = subtasks.length > 0 ? Math.round((doneCount / subtasks.length) * 100) : 0;
+  const progress = subtasks.length > 0 ? Math.round((activeCount / subtasks.length) * 100) : 0;
 
   const visibleSubtasks = sortSubtasksForTriage(subtasks);
 
   return (
-    <section className="rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/80">
-      <div className="border-b border-zinc-200 px-4 py-4 dark:border-zinc-800">
+    <section className={`flex min-h-0 flex-[1.65] flex-col rounded-2xl border border-zinc-200 bg-white shadow-sm dark:border-zinc-800 dark:bg-zinc-900/80 ${className}`}>
+      <div className="shrink-0 border-b border-zinc-200 px-3 py-3 dark:border-zinc-800">
         <div className="mb-3 flex items-center gap-3">
-          <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl border border-purple-200 bg-purple-50 text-purple-700 shadow-sm dark:border-purple-900/70 dark:bg-purple-950/30 dark:text-purple-300">
-            <GitBranch size={16} strokeWidth={2.5} />
+          <span className="inline-flex h-8 w-8 items-center justify-center rounded-xl border border-purple-200 bg-purple-50 text-purple-700 shadow-sm dark:border-purple-900/70 dark:bg-purple-950/30 dark:text-purple-300">
+            <GitBranch size={15} strokeWidth={2.5} />
           </span>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -428,27 +568,41 @@ function SubtasksSidebar({ subtasks, onSync, syncing }: { subtasks: Task[]; onSy
               {kanbanCount} Hermes Kanban task{kanbanCount === 1 ? '' : 's'} synced on the right
             </p>
           </div>
-          {onSync && (
+          {subtasks.length > 3 && (
             <button
-              onClick={onSync}
-              disabled={syncing}
-              className="inline-flex h-8 w-8 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 shadow-sm transition-colors hover:border-zinc-300 hover:text-zinc-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:text-zinc-200"
-              title="Sync Hermes Kanban subtasks"
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-zinc-200 bg-white px-2 text-[11px] font-semibold text-zinc-600 shadow-sm transition-colors hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300 dark:hover:border-zinc-700 dark:hover:bg-zinc-800"
+              title="Show all subtasks"
             >
-              {syncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} strokeWidth={2.5} />}
+              <ListTree size={12} strokeWidth={2.5} />
+              All
             </button>
           )}
+          {live && (
+            <span
+              className="inline-flex h-8 shrink-0 items-center gap-1.5 rounded-lg border border-emerald-200 bg-emerald-50 px-2 text-[11px] font-semibold text-emerald-700 shadow-sm dark:border-emerald-900/70 dark:bg-emerald-950/30 dark:text-emerald-300"
+              title="Live via AgentControl SSE + Hermes Kanban reconciliation"
+            >
+              <Radio size={12} strokeWidth={2.5} className="animate-pulse" />
+              Live
+            </span>
+          )}
         </div>
-        <div className="mb-2 grid grid-cols-3 gap-2 text-center text-[11px]">
-          <div className="rounded-lg border border-zinc-200 bg-white px-2 py-1.5 dark:border-zinc-800 dark:bg-zinc-900/80">
+        <div className="mb-2 grid grid-cols-4 gap-1.5 text-center text-[10px]">
+          <div className="rounded-lg border border-zinc-200 bg-white px-1.5 py-1 dark:border-zinc-800 dark:bg-zinc-900/80">
             <div className="font-semibold text-zinc-900 dark:text-zinc-100">{doneCount}/{subtasks.length}</div>
             <div className="text-zinc-500 dark:text-zinc-400">done</div>
           </div>
-          <div className="rounded-lg border border-amber-200 bg-amber-50 px-2 py-1.5 dark:border-amber-900/70 dark:bg-amber-950/30">
+          <div className="rounded-lg border border-purple-200 bg-purple-50 px-1.5 py-1 dark:border-purple-900/70 dark:bg-purple-950/30">
+            <div className="font-semibold text-purple-700 dark:text-purple-300">{reviewCount}</div>
+            <div className="text-purple-700/70 dark:text-purple-300/70">review</div>
+          </div>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-1.5 py-1 dark:border-amber-900/70 dark:bg-amber-950/30">
             <div className="font-semibold text-amber-700 dark:text-amber-300">{runningCount}</div>
             <div className="text-amber-700/70 dark:text-amber-300/70">running</div>
           </div>
-          <div className="rounded-lg border border-red-200 bg-red-50 px-2 py-1.5 dark:border-red-900/70 dark:bg-red-950/30">
+          <div className="rounded-lg border border-red-200 bg-red-50 px-1.5 py-1 dark:border-red-900/70 dark:bg-red-950/30">
             <div className="font-semibold text-red-700 dark:text-red-300">{blockedCount}</div>
             <div className="text-red-700/70 dark:text-red-300/70">blocked</div>
           </div>
@@ -460,21 +614,35 @@ function SubtasksSidebar({ subtasks, onSync, syncing }: { subtasks: Task[]; onSy
           />
         </div>
       </div>
-      <div className="px-4 py-3">
+      <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-2.5">
         <div className="flex flex-col gap-2.5">
           {visibleSubtasks.map((subtask) => (
             <SubtaskRow key={subtask.id} subtask={subtask} />
           ))}
         </div>
       </div>
+      {expanded && <SubtasksSlideover subtasks={visibleSubtasks} onClose={() => setExpanded(false)} />}
     </section>
   );
 }
 
 function SubtasksSlideover({ subtasks, onClose }: { subtasks: Task[]; onClose: () => void }) {
-  const doneCount = subtasks.filter((s) => s.status === 'done').length;
-  const runningCount = subtasks.filter((s) => s.delegation_status === 'running').length;
-  const blockedCount = subtasks.filter((s) => s.delegation_status === 'blocked').length;
+  const stats = subtasks.reduce(
+    (acc, subtask) => {
+      const effectiveStatus = getEffectiveDelegationStatus(subtask);
+      if (effectiveStatus === 'done') acc.done += 1;
+      if (effectiveStatus === 'running') acc.running += 1;
+      if (effectiveStatus === 'blocked') acc.blocked += 1;
+      if (effectiveStatus === 'review') acc.review += 1;
+      return acc;
+    },
+    { done: 0, running: 0, blocked: 0, review: 0 },
+  );
+  const doneCount = stats.done;
+  const runningCount = stats.running;
+  const blockedCount = stats.blocked;
+  const reviewCount = stats.review;
+  const activeCount = runningCount + reviewCount + blockedCount;
   const visibleSubtasks = sortSubtasksForTriage(subtasks);
 
   useEffect(() => {
@@ -506,8 +674,9 @@ function SubtasksSlideover({ subtasks, onClose }: { subtasks: Task[]; onClose: (
         </div>
         <div className="shrink-0 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
           <div className="mb-1.5 flex items-center justify-between gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-            <span className="font-medium">{doneCount}/{subtasks.length} done</span>
+            <span className="font-medium">{activeCount}/{subtasks.length} active · {doneCount} done</span>
             <div className="flex items-center gap-2">
+              {reviewCount > 0 && <span className="text-purple-600 dark:text-purple-400">{reviewCount} review</span>}
               {runningCount > 0 && <span className="text-amber-600 dark:text-amber-400">{runningCount} running</span>}
               {blockedCount > 0 && <span className="text-red-500 dark:text-red-400">{blockedCount} blocked</span>}
             </div>
@@ -515,7 +684,7 @@ function SubtasksSlideover({ subtasks, onClose }: { subtasks: Task[]; onClose: (
           <div className="h-1.5 overflow-hidden rounded-full bg-zinc-100 dark:bg-zinc-800">
             <div
               className="h-full rounded-full bg-emerald-500 transition-[width] duration-300 ease-out dark:bg-emerald-400"
-              style={{ width: `${subtasks.length > 0 ? Math.round((doneCount / subtasks.length) * 100) : 0}%` }}
+              style={{ width: `${subtasks.length > 0 ? Math.round((activeCount / subtasks.length) * 100) : 0}%` }}
             />
           </div>
         </div>
@@ -532,6 +701,145 @@ function SubtasksSlideover({ subtasks, onClose }: { subtasks: Task[]; onClose: (
   );
 }
 
+interface ExecutionRailContentProps {
+  task: Task;
+  subtasks: Task[];
+  kanbanInfo: KanbanTaskResponse | null;
+  kanbanLogs: KanbanLogsResponse | null;
+  githubStatus: GitHubStatusState;
+  onGitHubRefresh: () => void;
+  onGitHubEdit: () => void;
+  prDraft: string;
+  onPrDraftChange: (value: string) => void;
+  onGitHubLink: (nextPrUrl?: string | null) => void;
+  kanbanRefreshKey: number;
+  className?: string;
+}
+
+function ExecutionRailContent({
+  task,
+  subtasks,
+  kanbanInfo,
+  kanbanLogs,
+  githubStatus,
+  onGitHubRefresh,
+  onGitHubEdit,
+  prDraft,
+  onPrDraftChange,
+  onGitHubLink,
+  kanbanRefreshKey,
+  className = '',
+}: ExecutionRailContentProps) {
+  const hasKanban = Boolean(kanbanInfo?.kanban_id ?? task.hermes_kanban_task_id);
+  const hasSubtaskSidebar = !task.parent_task_id && subtasks.length > 0;
+  const showWorkerTranscript = hasKanban && !hasSubtaskSidebar;
+
+  return (
+    <div className={`flex min-h-0 flex-col gap-2 ${className}`}>
+      <KanbanPanel
+        info={kanbanInfo}
+        logs={kanbanLogs}
+        github={githubStatus}
+        onGitHubRefresh={onGitHubRefresh}
+        onGitHubEdit={onGitHubEdit}
+      />
+      {showWorkerTranscript && (
+        <TranscriptLog
+          taskId={task.id}
+          hasKanban={hasKanban}
+          refreshKey={kanbanRefreshKey}
+        />
+      )}
+      <GitHubPanel
+        status={githubStatus}
+        onRefresh={onGitHubRefresh}
+        prDraft={prDraft}
+        onPrDraftChange={onPrDraftChange}
+        onLink={onGitHubLink}
+        compact
+      />
+      {hasSubtaskSidebar && (
+        <SubtasksSidebar
+          subtasks={subtasks}
+          live={Boolean(task.hermes_kanban_task_id)}
+          className="flex-1"
+        />
+      )}
+      {!kanbanInfo?.kanban_id && !githubStatus.prNumber && !githubStatus.prUrl && (task.parent_task_id || subtasks.length === 0) && (
+        <div className="rounded-2xl border border-dashed border-zinc-200 bg-white/70 px-4 py-8 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-500">
+          No Kanban metadata yet.
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MobileExecutionRailSlideover({
+  onClose,
+  ...props
+}: ExecutionRailContentProps & { onClose: () => void }) {
+  const kanbanBacked = Boolean(props.kanbanInfo?.kanban_id ?? props.task.hermes_kanban_task_id);
+
+  useEffect(() => {
+    function handleKey(e: KeyboardEvent) {
+      if (e.key === 'Escape') onClose();
+    }
+    document.addEventListener('keydown', handleKey);
+    return () => document.removeEventListener('keydown', handleKey);
+  }, [onClose]);
+
+  return createPortal(
+    <div className="fixed inset-0 z-[100] flex flex-col lg:hidden">
+      <div className="absolute inset-0 bg-black/35 backdrop-blur-sm" onClick={onClose} />
+      <div className="relative mt-auto flex h-[88dvh] w-full flex-col rounded-t-3xl border border-zinc-200 bg-zinc-50 shadow-2xl dark:border-zinc-800 dark:bg-zinc-950">
+        <div className="mx-auto mt-2 h-1.5 w-12 rounded-full bg-zinc-300 dark:bg-zinc-700" />
+        <div className="flex min-h-[64px] items-center justify-between gap-3 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="inline-flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900/70 dark:bg-purple-950/30 dark:text-purple-300">
+                <Activity size={16} strokeWidth={2.5} />
+              </span>
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-semibold text-zinc-900 dark:text-zinc-100">Execution rail</h2>
+                <p className="truncate text-xs text-zinc-500 dark:text-zinc-400">
+                  Kanban, PR, worker transcript and subtasks
+                </p>
+              </div>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={onClose}
+            aria-label="Close execution rail"
+            className="inline-flex min-h-[44px] min-w-[44px] shrink-0 items-center justify-center rounded-xl border border-zinc-200 bg-white text-zinc-500 transition-colors hover:bg-zinc-100 hover:text-zinc-700 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+          >
+            <X size={18} strokeWidth={2.5} />
+          </button>
+        </div>
+        <div className="flex items-center gap-2 overflow-x-auto border-b border-zinc-200 px-4 py-2 text-[11px] dark:border-zinc-800">
+          <span className={`inline-flex shrink-0 items-center gap-1 rounded-full border px-2 py-1 font-semibold ${kanbanBacked ? 'border-purple-200 bg-purple-50 text-purple-700 dark:border-purple-900/70 dark:bg-purple-950/30 dark:text-purple-300' : 'border-zinc-200 bg-white text-zinc-500 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400'}`}>
+            <Activity size={11} strokeWidth={2.5} />
+            {kanbanBacked ? 'Kanban live' : 'No Kanban'}
+          </span>
+          <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-1 font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+            <MessageSquareText size={11} strokeWidth={2.5} />
+            Transcript
+          </span>
+          {props.subtasks.length > 0 && (
+            <span className="inline-flex shrink-0 items-center gap-1 rounded-full border border-zinc-200 bg-white px-2 py-1 font-medium text-zinc-600 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-300">
+              <GitBranch size={11} strokeWidth={2.5} />
+              {props.subtasks.length} subtasks
+            </span>
+          )}
+        </div>
+        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain p-3">
+          <ExecutionRailContent {...props} className="min-h-full" />
+        </div>
+      </div>
+    </div>,
+    document.body,
+  );
+}
 
 export function TaskDetailPage() {
   const { taskId } = useParams<{ taskId: string }>();
@@ -555,13 +863,14 @@ export function TaskDetailPage() {
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showSubtasksSlideover, setShowSubtasksSlideover] = useState(false);
+  const [showMobileExecutionRail, setShowMobileExecutionRail] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const markViewedInFlightRef = useRef<string | null>(null);
   const [detailFetchInFlight, setDetailFetchInFlight] = useState(false);
   const [detailFetchFailed, setDetailFetchFailed] = useState(false);
   const [kanbanInfo, setKanbanInfo] = useState<KanbanTaskResponse | null>(null);
   const [kanbanLogs, setKanbanLogs] = useState<KanbanLogsResponse | null>(null);
-  const [subtasksSyncing, setSubtasksSyncing] = useState(false);
+  const [kanbanRefreshKey, setKanbanRefreshKey] = useState(0);
   const [githubStatus, setGitHubStatus] = useState<GitHubStatusState>({
     prUrl: null,
     prNumber: null,
@@ -576,6 +885,7 @@ export function TaskDetailPage() {
     linking: false,
   });
   const [prDraft, setPrDraft] = useState('');
+  const [githubEditorSignal, setGitHubEditorSignal] = useState(0);
   const titleAnimation = useRenameAnimation(task?.title ?? '', task?.id ?? null);
 
   useEffect(() => {
@@ -651,10 +961,9 @@ export function TaskDetailPage() {
 
   const refreshSubtasks = useCallback(async (options?: { manual?: boolean }) => {
     if (!task || task.parent_task_id) return;
-    if (options?.manual) setSubtasksSyncing(true);
     try {
       const res = await (task.hermes_kanban_task_id
-        ? syncTaskKanbanSubtasks(task.id)
+        ? syncTaskKanbanSubtasksFromChat(task.id)
         : fetchSubtasks(task.id));
       setSubtasks(task.id, res.subtasks);
       if (options?.manual) {
@@ -671,8 +980,6 @@ export function TaskDetailPage() {
           description: err instanceof Error ? err.message : 'Could not sync subtasks',
         });
       }
-    } finally {
-      if (options?.manual) setSubtasksSyncing(false);
     }
   }, [task, setSubtasks]);
 
@@ -682,7 +989,7 @@ export function TaskDetailPage() {
     const run = async () => {
       try {
         const res = await (task.hermes_kanban_task_id
-          ? syncTaskKanbanSubtasks(task.id)
+          ? syncTaskKanbanSubtasksFromChat(task.id)
           : fetchSubtasks(task.id));
         if (!cancelled) setSubtasks(task.id, res.subtasks);
       } catch {
@@ -690,12 +997,8 @@ export function TaskDetailPage() {
       }
     };
     void run();
-    const timer = task.hermes_kanban_task_id
-      ? window.setInterval(() => { void run(); }, 15_000)
-      : null;
     return () => {
       cancelled = true;
-      if (timer) window.clearInterval(timer);
     };
   }, [task?.id, task?.parent_task_id, task?.hermes_kanban_task_id, setSubtasks]);
 
@@ -717,6 +1020,7 @@ export function TaskDetailPage() {
           if (!cancelled) {
             setKanbanInfo(info);
             setKanbanLogs(logs);
+            setKanbanRefreshKey((key) => key + 1);
           }
         })
         .catch(() => {
@@ -932,13 +1236,37 @@ export function TaskDetailPage() {
   const parentTask = task.parent_task_id
     ? tasks.find((candidate) => candidate.id === task.parent_task_id) ?? null
     : null;
+  const executionRailAvailable = Boolean(
+    kanbanInfo?.kanban_id
+    || task.hermes_kanban_task_id
+    || githubStatus.prNumber
+    || githubStatus.prUrl
+    || subtasks.length > 0,
+  );
+  const showDesktopExecutionRail = executionRailAvailable;
+  const contentGridClassName = showDesktopExecutionRail
+    ? 'grid w-full flex-1 min-h-0 grid-cols-1 border-t border-zinc-200 dark:border-zinc-800 lg:grid-cols-[minmax(0,1fr)_minmax(720px,760px)] 2xl:grid-cols-[minmax(0,1fr)_minmax(760px,820px)]'
+    : 'grid w-full flex-1 min-h-0 grid-cols-1 border-t border-zinc-200 dark:border-zinc-800';
+  const executionRailProps: ExecutionRailContentProps = {
+    task,
+    subtasks,
+    kanbanInfo,
+    kanbanLogs,
+    githubStatus,
+    onGitHubRefresh: handleRefreshGitHub,
+    onGitHubEdit: () => setGitHubEditorSignal((value) => value + 1),
+    prDraft,
+    onPrDraftChange: setPrDraft,
+    onGitHubLink: handleLinkGitHubPr,
+    kanbanRefreshKey,
+  };
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="w-full px-3 pt-3 pb-2 sm:px-6 sm:pt-4 sm:pb-3">
-        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+      <div className="w-full px-3 py-1.5 sm:px-6 sm:py-2">
+        <div className="flex flex-col gap-1.5 sm:flex-row sm:items-center sm:justify-between">
           <div className="min-w-0 flex-1">
-            <div className="-ml-2 relative w-full rounded-md px-2 py-1 pr-10 transition-colors hover:bg-zinc-100/80 focus-within:bg-white focus-within:ring-1 focus-within:ring-zinc-200 dark:hover:bg-zinc-800/80 dark:focus-within:bg-zinc-900 dark:focus-within:ring-zinc-700">
+            <div className="-ml-2 relative w-full rounded-md px-2 py-0.5 pr-10 transition-colors hover:bg-zinc-100/80 focus-within:bg-white focus-within:ring-1 focus-within:ring-zinc-200 dark:hover:bg-zinc-800/80 dark:focus-within:bg-zinc-900 dark:focus-within:ring-zinc-700">
               <div className="rename-title-shell">
                 <input
                   ref={titleInputRef}
@@ -959,13 +1287,13 @@ export function TaskDetailPage() {
                   }}
                   aria-label="Task title"
                   placeholder="Name this task"
-                  className={`block w-full cursor-text truncate bg-transparent p-0 text-lg font-semibold leading-7 text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500 sm:text-xl sm:leading-8 ${
+                  className={`block w-full cursor-text truncate bg-transparent p-0 text-base font-semibold leading-6 text-zinc-900 outline-none placeholder:text-zinc-400 dark:text-zinc-100 dark:placeholder:text-zinc-500 sm:text-lg sm:leading-7 ${
                     titleAnimation.isAnimating ? 'rename-title-input-hidden' : ''
                   }`}
                 />
                 <RenameReveal
                   animation={titleAnimation}
-                  className="text-lg font-semibold leading-7 text-zinc-900 dark:text-zinc-100 sm:text-xl sm:leading-8"
+                  className="text-base font-semibold leading-6 text-zinc-900 dark:text-zinc-100 sm:text-lg sm:leading-7"
                 />
               </div>
               <button
@@ -984,7 +1312,7 @@ export function TaskDetailPage() {
             </div>
           </div>
 
-          <div className="flex items-center justify-between gap-2.5 sm:shrink-0 sm:justify-start sm:pt-1.5">
+          <div className="flex items-center justify-between gap-2.5 sm:shrink-0 sm:justify-start">
             <div className="flex items-center gap-2.5">
               <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-medium shrink-0 ${statusMeta.tint}`}>
                 <StatusIcon status={task.status} />
@@ -1015,6 +1343,17 @@ export function TaskDetailPage() {
             </div>
 
             <div className="flex items-center gap-1.5 sm:gap-2.5">
+              {executionRailAvailable && (
+                <button
+                  type="button"
+                  onClick={() => setShowMobileExecutionRail(true)}
+                  aria-label="Open execution rail"
+                  className="inline-flex min-h-[44px] items-center justify-center gap-1.5 rounded-lg border border-purple-200 bg-purple-50 px-3 text-xs font-semibold text-purple-700 transition-colors hover:border-purple-300 hover:bg-purple-100 dark:border-purple-900/70 dark:bg-purple-950/40 dark:text-purple-300 dark:hover:bg-purple-950/70 lg:hidden"
+                >
+                  <Activity size={14} strokeWidth={2.5} />
+                  Rail
+                </button>
+              )}
               {task.status !== 'done' && (
                 <div className="group relative shrink-0">
                   <button
@@ -1089,48 +1428,16 @@ export function TaskDetailPage() {
         </div>
       </div>
 
-      <div className="grid w-full flex-1 min-h-0 grid-cols-1 border-t border-zinc-200 dark:border-zinc-800 lg:grid-cols-[minmax(0,1fr)_minmax(340px,420px)] 2xl:grid-cols-[minmax(0,1fr)_minmax(380px,460px)]">
+      <div className={contentGridClassName}>
         <section className="flex min-h-0 min-w-0 flex-col bg-white dark:bg-zinc-950">
           <TaskChat taskId={task.id} initialMessage={initialMessage} initialSettings={initialSettings} />
         </section>
 
-        <aside className="hidden min-h-0 overflow-y-auto border-l border-zinc-200 bg-gradient-to-b from-zinc-50 to-white p-4 dark:border-zinc-800 dark:from-zinc-950 dark:to-zinc-950/80 lg:block">
-          <div className="mb-3 flex justify-end">
-            {!task.parent_task_id && subtasks.length > 0 && (
-              <button
-                type="button"
-                onClick={() => { void refreshSubtasks({ manual: true }); }}
-                disabled={subtasksSyncing}
-                className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-zinc-200 bg-white text-zinc-500 shadow-sm transition-colors hover:border-zinc-300 hover:text-zinc-700 disabled:cursor-not-allowed disabled:opacity-60 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-400 dark:hover:border-zinc-700 dark:hover:text-zinc-200"
-                title="Sync Hermes Kanban subtasks"
-              >
-                {subtasksSyncing ? <Loader2 size={14} className="animate-spin" /> : <RefreshCw size={14} strokeWidth={2.5} />}
-              </button>
-            )}
-          </div>
-          <div className="flex flex-col gap-3">
-            <KanbanPanel info={kanbanInfo} logs={kanbanLogs} />
-            <GitHubPanel
-              status={githubStatus}
-              onRefresh={handleRefreshGitHub}
-              prDraft={prDraft}
-              onPrDraftChange={setPrDraft}
-              onLink={handleLinkGitHubPr}
-            />
-            {!task.parent_task_id && subtasks.length > 0 && (
-              <SubtasksSidebar
-                subtasks={subtasks}
-                onSync={() => { void refreshSubtasks({ manual: true }); }}
-                syncing={subtasksSyncing}
-              />
-            )}
-            {!kanbanInfo?.kanban_id && !githubStatus.prNumber && !githubStatus.prUrl && (task.parent_task_id || subtasks.length === 0) && (
-              <div className="rounded-2xl border border-dashed border-zinc-200 bg-white/70 px-4 py-8 text-center text-xs text-zinc-400 dark:border-zinc-800 dark:bg-zinc-900/60 dark:text-zinc-500">
-                No Kanban metadata yet.
-              </div>
-            )}
-          </div>
-        </aside>
+        {showDesktopExecutionRail && (
+          <aside className="hidden min-h-0 overflow-hidden border-l border-zinc-200 bg-gradient-to-b from-zinc-50 to-white p-4 dark:border-zinc-800 dark:from-zinc-950 dark:to-zinc-950/80 lg:block">
+            <ExecutionRailContent {...executionRailProps} className="h-full" />
+          </aside>
+        )}
       </div>
 
       {showSubtasksSlideover && subtasks.length > 0 && (
@@ -1139,6 +1446,23 @@ export function TaskDetailPage() {
           onClose={() => setShowSubtasksSlideover(false)}
         />
       )}
+
+      {showMobileExecutionRail && executionRailAvailable && (
+        <MobileExecutionRailSlideover
+          {...executionRailProps}
+          onClose={() => setShowMobileExecutionRail(false)}
+        />
+      )}
+
+      <GitHubPanel
+        status={githubStatus}
+        onRefresh={handleRefreshGitHub}
+        prDraft={prDraft}
+        onPrDraftChange={setPrDraft}
+        onLink={handleLinkGitHubPr}
+        compact
+        openEditorSignal={githubEditorSignal}
+      />
 
       {showDeleteConfirm && (
         <DeleteConfirmModal

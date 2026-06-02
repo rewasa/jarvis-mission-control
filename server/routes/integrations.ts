@@ -14,7 +14,7 @@ export const integrationsRouter = Router();
  *
  * When both are omitted, returns 400 — use the per-task sync endpoint instead.
  */
-integrationsRouter.post('/hermes/kanban-sync', (req, res) => {
+integrationsRouter.post('/hermes/kanban-sync', async (req, res) => {
   const { taskId, kanbanTaskId } = req.body ?? {};
 
   if (taskId) {
@@ -22,7 +22,7 @@ integrationsRouter.post('/hermes/kanban-sync', (req, res) => {
     const task = getTask(taskId);
     if (!task) return res.status(404).json({ error: 'Task not found' });
     try {
-      const result = syncKanbanChildrenForTask(task);
+      const result = await syncKanbanChildrenForTask(task);
       return res.json({ synced: true, imported: result.imported, updated: result.updated });
     } catch (err) {
       return res.status(400).json({ error: err instanceof Error ? err.message : 'Sync failed' });
@@ -34,7 +34,7 @@ integrationsRouter.post('/hermes/kanban-sync', (req, res) => {
     const existing = getTaskByKanbanId(kanbanTaskId);
     if (existing) {
       try {
-        const result = syncKanbanChildrenForTask(existing);
+        const result = await syncKanbanChildrenForTask(existing);
         return res.json({ synced: true, imported: result.imported, updated: result.updated });
       } catch (err) {
         return res.status(400).json({ error: err instanceof Error ? err.message : 'Sync failed' });

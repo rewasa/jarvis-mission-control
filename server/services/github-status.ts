@@ -191,13 +191,15 @@ export async function fetchPrStatus(
 
 // ── Task Content Scanning ────────────────────────────────────────────────
 
-function gatherTaskTexts(task: Task): string[] {
+interface GitHubStatusRefreshOptions {
+  extraTexts?: Array<string | null | undefined>;
+}
+
+function gatherTaskTexts(task: Task, options?: GitHubStatusRefreshOptions): string[] {
   const texts: string[] = [];
 
   if (task.description) texts.push(task.description);
   if (task.title) texts.push(task.title);
-
-  if (task.github_pr_url) texts.push(task.github_pr_url);
 
   if (task.hermes_kanban_task_id) {
     try {
@@ -224,16 +226,23 @@ function gatherTaskTexts(task: Task): string[] {
     }
   }
 
+  // Keep the stored PR URL as a fallback, not as the first match. Subtasks can
+  // inherit a parent PR during creation, but a worker may later create its own
+  // PR and mention it in the child Kanban run/comment/body. Prefer the newest
+  // task/kanban evidence over the stale inherited value.
+  if (task.github_pr_url) texts.push(task.github_pr_url);
+
+  if (options?.extraTexts) {
+    for (const text of options.extraTexts) {
+      if (text) texts.push(text);
+    }
+  }
+
   return texts;
 }
 
-// ── Main Service ─────────────────────────────────────────────────────────
-
-/**
- * Refresh GitHub PR status for a task.
- */
-export async function refreshTaskGitHubStatus(task: Task): Promise<Task | null> {
-  const texts = gatherTaskTexts(task);
+export function findTaskGitHubPrRefs(task: Task, options?: GitHubStatusRefreshOptions): GitHubPrRef[] {
+  const texts = gatherTaskTexts(task, options);
   const prRefs = texts.flatMap((t) => extractGitHubPrRefs(t ?? ''));
 
   const seen = new Set<string>();
@@ -244,6 +253,19 @@ export async function refreshTaskGitHubStatus(task: Task): Promise<Task | null> 
       uniqueRefs.push(ref);
     }
   }
+  return uniqueRefs;
+}
+
+// ── Main Service ─────────────────────────────────────────────────────────
+
+/**
+ * Refresh GitHub PR status for a task.
+ */
+export async function refreshTaskGitHubStatus(
+  task: Task,
+  options?: GitHubStatusRefreshOptions,
+): Promise<Task | null> {
+  const uniqueRefs = findTaskGitHubPrRefs(task, options);
 
   if (uniqueRefs.length === 0) {
     const cleared = updateTask(task.id, {

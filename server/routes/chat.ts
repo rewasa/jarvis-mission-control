@@ -1,4 +1,6 @@
 import { Router } from 'express';
+import { existsSync, statSync } from 'node:fs';
+import { join } from 'node:path';
 import { contextFromTask, getTask, updateTask, touchTask, recordAgentResponse } from '../db/queries.js';
 import { adapter } from '../app.js';
 import { broadcast, initSSE } from '../events.js';
@@ -26,6 +28,7 @@ import { TASK_AGENT_SYSTEM_PROMPT } from '../prompts/task-agent.js';
 import { isRecord, toErrorMessage } from '../errors.js';
 import { collectGitDiffSummary } from '../git-diff-preview.js';
 import { appendKanbanComment } from '../services/kanban-bridge.js';
+import { resolveHermesHome } from '../paths.js';
 import type { StreamEvent, AgentRunOptions } from '../adapters/types.js';
 import { CHAT_RUN_MODES, MINIONS_GOAL_MAX_TURNS, type ChatRunMode, type CompactResult, type ContextUsage, type GoalStateSnapshot, type Task } from '../../shared/types.js';
 
@@ -33,7 +36,19 @@ export const chatRouter = Router();
 
 function hasNoSession(task: Task): boolean {
   if (task.last_agent_response_at !== null) return false;
-  return getRunStatus(task.id)?.status !== 'streaming';
+  if (getRunStatus(task.id)?.status === 'streaming') return false;
+  return !hermesSessionMayExist(task.id);
+}
+
+function hermesSessionMayExist(sessionId: string): boolean {
+  const stateDb = join(resolveHermesHome(), 'state.db');
+  if (!existsSync(stateDb)) return false;
+
+  try {
+    return statSync(stateDb).isFile();
+  } catch {
+    return false;
+  }
 }
 
 function isTaskRunActive(status: ReturnType<typeof getRunStatus>): boolean {
@@ -42,6 +57,10 @@ function isTaskRunActive(status: ReturnType<typeof getRunStatus>): boolean {
 
 function isInterruptibleRun(status: ReturnType<typeof getRunStatus>): boolean {
   return status?.status === 'streaming' && (status.kind === 'chat' || status.kind === 'goal');
+}
+
+function codeDiffSignature(diff: NonNullable<StreamEvent['codeDiff']>): string {
+  return `${diff.fileCount}:${diff.stat}:${diff.patch.slice(0, 300)}`;
 }
 
 function completeTaskRun(
@@ -139,11 +158,36 @@ function steerSystemMessage(instruction: string): string {
   ].join('\n');
 }
 
-async function appendSteerMessage(task: Task, content: string): Promise<void> {
+function shouldForwardChatToKanban(task: Task): boolean {
+  return Boolean(task.parent_task_id && task.hermes_kanban_task_id);
+}
+
+function kanbanChatCommentBody(content: string, mode: ChatRunMode): string {
+  const label = mode === 'goal' ? 'goal update' : 'chat message';
+  return [
+    `AgentControl ${label} from linked subtask:`,
+    '',
+    content.trim(),
+  ].join('\n');
+}
+
+function forwardSubtaskChatToKanban(task: Task, content: string, mode: ChatRunMode): boolean {
+  if (!shouldForwardChatToKanban(task) || !task.hermes_kanban_task_id) return false;
+  appendKanbanComment(
+    task.hermes_kanban_task_id,
+    kanbanChatCommentBody(content, mode),
+    'agentcontrol-chat',
+  );
+  return true;
+}
+
+async function appendSteerMessage(task: Task, content: string): Promise<boolean> {
   const instruction = stripSteerCommand(content);
   if (!instruction) {
     throw new Error('Usage: /steer <instruction>');
   }
+
+  const workerSteered = await adapter.steerChat(task.id, instruction);
   await adapter.appendMessage(task.id, 'user', steerSystemMessage(instruction));
   appendUserMessage(task.id, `/steer ${instruction}`);
   if (task.hermes_kanban_task_id) {
@@ -153,8 +197,14 @@ async function appendSteerMessage(task: Task, content: string): Promise<void> {
       'agentcontrol',
     );
   }
-  appendSystemMessage(task.id, `Steer queued: ${instruction}`);
+  appendSystemMessage(
+    task.id,
+    workerSteered
+      ? `Steer delivered to running agent: ${instruction}`
+      : `Steer queued in chat history: ${instruction}`,
+  );
   broadcastRunSnapshot(task.id);
+  return workerSteered;
 }
 
 function taskWithDelegationStatus(task: Task, runStatus: ReturnType<typeof getRunStatus>): Task | undefined {
@@ -241,12 +291,24 @@ async function streamChatTurn(
   let interrupted = false;
   let lastDiffSignature: string | null = null;
 
+  try {
+    const initialDiff = await collectGitDiffSummary();
+    lastDiffSignature = initialDiff ? codeDiffSignature(initialDiff) : null;
+  } catch {
+    lastDiffSignature = null;
+  }
+
   async function maybeAttachDiffPreview(event: StreamEvent): Promise<StreamEvent> {
     if (event.type !== 'tool_progress' || event.status !== 'completed') return event;
-    const diff = await collectGitDiffSummary();
+    let diff: Awaited<ReturnType<typeof collectGitDiffSummary>>;
+    try {
+      diff = await collectGitDiffSummary();
+    } catch {
+      return event;
+    }
     if (!diff) return event;
 
-    const signature = `${diff.fileCount}:${diff.stat}:${diff.patch.slice(0, 300)}`;
+    const signature = codeDiffSignature(diff);
     if (signature === lastDiffSignature) return event;
     lastDiffSignature = signature;
 
@@ -415,11 +477,13 @@ chatRouter.post('/:id/messages', async (req, res) => {
   const activeRun = getRunStatus(task.id);
   if (isSteerCommand(content)) {
     try {
-      await appendSteerMessage(task, content);
+      const workerSteered = await appendSteerMessage(task, content);
+      const forwarded = forwardSubtaskChatToKanban(task, content, mode);
       return res.status(202).json({
         runId: activeRun?.runId ?? null,
-        steered: true,
+        steered: workerSteered,
         persisted: true,
+        forwardedToKanban: forwarded,
       });
     } catch (error) {
       return res.status(400).json({ error: toErrorMessage(error, 'Could not steer task') });
@@ -466,11 +530,12 @@ chatRouter.post('/:id/messages', async (req, res) => {
     }
 
     const { snapshot, state } = startGoalRun(runTask.id, sessionId, goalState);
+    const forwarded = forwardSubtaskChatToKanban(runTask, content, mode);
     broadcast({ type: 'task_run_updated', run: state });
     broadcastLive(runTask.id, { type: 'snapshot', run: snapshot });
     void consumeGoalRun(runTask, sessionId, content, snapshot.runId);
 
-    return res.status(202).json({ runId: snapshot.runId });
+    return res.status(202).json({ runId: snapshot.runId, forwardedToKanban: forwarded });
   }
 
   const { snapshot, state } = startRun(runTask.id, sessionId, content);
@@ -481,9 +546,10 @@ chatRouter.post('/:id/messages', async (req, res) => {
   }
   broadcast({ type: 'task_run_updated', run: state });
   broadcastLive(runTask.id, { type: 'snapshot', run: snapshot });
+  const forwarded = forwardSubtaskChatToKanban(runTask, content, mode);
   void consumeChatRun(runTask, sessionId, content, snapshot.runId);
 
-  res.status(202).json({ runId: snapshot.runId });
+  res.status(202).json({ runId: snapshot.runId, forwardedToKanban: forwarded });
 });
 
 chatRouter.post('/:id/interrupt', async (req, res) => {

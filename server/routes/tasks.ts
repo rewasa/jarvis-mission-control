@@ -1,10 +1,13 @@
 import { Router } from 'express';
+import { readFileSync } from 'node:fs';
 import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewed, getSubtasks, getSubtaskCount } from '../db/queries.js';
 import { broadcast } from '../events.js';
 import { adapter } from '../app.js';
 import { startTaskChatRun } from './chat.js';
-import { createKanbanTask, ensureKanbanRootTaskForAgentControlTask, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, syncKanbanChildrenForTask } from '../services/kanban-bridge.js';
+import { createKanbanTask, ensureKanbanRootTaskForAgentControlTask, extractKanbanTaskIdsFromText, findBoardForKanbanTask, getBoardTaskTranscriptPath, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, syncKanbanChildrenForTask, syncTaskStatusFromKanban } from '../services/kanban-bridge.js';
+import { refreshTaskGitHubStatus, extractGitHubPrRefs } from '../services/github-status.js';
 import { mergeLinkedPullRequestForTask } from '../services/github-merge.js';
+import type { TaskMessage } from '../../shared/types.js';
 import { TASK_STATUSES, DELEGATION_STATUSES } from '../../shared/types.js';
 import type { TaskStatus, DelegationStatus } from '../../shared/types.js';
 
@@ -12,16 +15,93 @@ export const tasksRouter = Router();
 
 const LOW_INFORMATION_TITLES = new Set(['?', 'hi', 'hello', 'hey', 'yo']);
 
+type TaskUpdateFields = Parameters<typeof updateTask>[1];
+
+function completeSubtaskTree(parentId: string): number {
+  let completed = 0;
+  const subtasks = getSubtasks(parentId);
+
+  for (const subtask of subtasks) {
+    completed += completeSubtaskTree(subtask.id);
+    const fields: TaskUpdateFields = { status: 'done' };
+    if (subtask.delegation_status) fields.delegation_status = 'done';
+    const updated = updateTask(subtask.id, fields);
+    if (updated) {
+      completed += 1;
+      broadcast({ type: 'task_updated', task: updated });
+    }
+  }
+
+  return completed;
+}
+
+function updateTaskStatus(taskId: string, status: TaskStatus): { task: ReturnType<typeof getTask>; subtasksCompleted: number } {
+  const current = getTask(taskId);
+  if (!current) return { task: undefined, subtasksCompleted: 0 };
+
+  const subtasksCompleted = status === 'done' ? completeSubtaskTree(taskId) : 0;
+  const updated = updateTask(taskId, { status });
+  if (updated) broadcast({ type: 'task_updated', task: updated });
+
+  return { task: updated, subtasksCompleted };
+}
+
+async function completeTaskWithLinkedPrMerge(taskId: string): Promise<{
+  task: ReturnType<typeof getTask>;
+  subtasksCompleted: number;
+  githubMerge: Awaited<ReturnType<typeof mergeLinkedPullRequestForTask>> | null;
+}> {
+  const current = getTask(taskId);
+  if (!current) return { task: undefined, subtasksCompleted: 0, githubMerge: null };
+
+  const githubMerge = await mergeLinkedPullRequestForTask(current);
+  if (githubMerge.status === 'blocked' || githubMerge.status === 'auto_merge_enabled') {
+    return { task: getTask(taskId) ?? current, subtasksCompleted: 0, githubMerge };
+  }
+
+  const result = updateTaskStatus(taskId, 'done');
+  return { ...result, githubMerge };
+}
+
 tasksRouter.get('/', (req, res) => {
   const status = req.query.status as TaskStatus | undefined;
-  const tasks = getAllTasks(status);
+  const tasks = getAllTasks()
+    .map(task => (task.hermes_kanban_task_id ? syncTaskStatusFromKanban(task).task : task))
+    .filter(task => !status || task.status === status);
   res.json({ tasks });
 });
 
-tasksRouter.get('/:id', (req, res) => {
+function recentTaskMessageTexts(messages: TaskMessage[], limit = 80): string[] {
+  return messages
+    .slice(-limit)
+    .map((message) => [message.content, message.thinking].filter(Boolean).join('\n'))
+    .filter(Boolean);
+}
+
+tasksRouter.get('/:id', async (req, res) => {
   const task = getTask(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
-  res.json({ task });
+
+  const synced = task.hermes_kanban_task_id
+    ? syncTaskStatusFromKanban(task).task
+    : task;
+
+  let messageTexts: string[] = [];
+  if (synced.hermes_kanban_task_id || synced.last_agent_response_at !== null) {
+    try {
+      messageTexts = recentTaskMessageTexts(await adapter.getMessages(synced.id, synced.id));
+    } catch {
+      // Best-effort: Kanban evidence still gets scanned below.
+    }
+  }
+
+  const enriched = synced.hermes_kanban_task_id || messageTexts.length > 0
+    ? await refreshTaskGitHubStatus(synced, { extraTexts: messageTexts }).catch(() => null)
+    : null;
+  const finalTask = enriched?.hermes_kanban_task_id
+    ? syncTaskStatusFromKanban(enriched).task
+    : enriched ?? synced;
+  res.json({ task: finalTask });
 });
 
 function generateTitle(text: string): string {
@@ -64,8 +144,8 @@ tasksRouter.post('/', (req, res) => {
     ? delegation_profile.trim()
     : 'orchestrator';
   const resolvedPrUrl = typeof github_pr_url === 'string' && github_pr_url.trim()
-    ? github_pr_url.trim()
-    : null;
+    ? extractGitHubPrRefs(github_pr_url.trim())[0]?.url ?? github_pr_url.trim()
+    : extractGitHubPrRefs(description)[0]?.url ?? null;
   const resolvedBranch = typeof branch === 'string' && branch.trim()
     ? branch.trim()
     : null;
@@ -103,7 +183,7 @@ tasksRouter.post('/', (req, res) => {
   }
 });
 
-tasksRouter.patch('/:id', (req, res) => {
+tasksRouter.patch('/:id', async (req, res) => {
   const allowed = ['title', 'description', 'status', 'priority', 'labels_json', 'assignee', 'delegation_status', 'parent_task_id', 'agent_model', 'reasoning_effort', 'hermes_kanban_task_id', 'delegation_profile', 'external_source', 'github_pr_url', 'github_pr_number', 'github_pr_state', 'github_pr_head_ref', 'github_pr_head_sha', 'github_checks_status', 'github_checks_summary', 'github_checks_updated_at'] as const;
   const fields: Record<string, unknown> = {};
   for (const key of allowed) {
@@ -116,6 +196,30 @@ tasksRouter.patch('/:id', (req, res) => {
 
   if (fields.delegation_status && !DELEGATION_STATUSES.includes(fields.delegation_status as DelegationStatus)) {
     return res.status(400).json({ error: `delegation_status must be one of: ${DELEGATION_STATUSES.join(', ')}` });
+  }
+
+  if (fields.status) {
+    const requestedStatus = fields.status as TaskStatus;
+    const result = requestedStatus === 'done'
+      ? await completeTaskWithLinkedPrMerge(req.params.id)
+      : { ...updateTaskStatus(req.params.id, requestedStatus), githubMerge: null };
+    if (!result.task) return res.status(404).json({ error: 'Task not found' });
+    if (result.githubMerge?.status === 'blocked' || result.githubMerge?.status === 'auto_merge_enabled') {
+      return res.status(409).json({
+        error: result.githubMerge.message,
+        task: result.task,
+        subtasksCompleted: result.subtasksCompleted,
+        githubMerge: result.githubMerge,
+      });
+    }
+    const remainingFields = { ...fields };
+    delete remainingFields.status;
+    const updated = Object.keys(remainingFields).length > 0
+      ? updateTask(req.params.id, remainingFields)
+      : result.task;
+    if (!updated) return res.status(404).json({ error: 'Task not found' });
+    if (updated !== result.task) broadcast({ type: 'task_updated', task: updated });
+    return res.json({ task: updated, subtasksCompleted: result.subtasksCompleted, githubMerge: result.githubMerge });
   }
 
   const updated = updateTask(req.params.id, fields);
@@ -139,13 +243,13 @@ tasksRouter.delete('/:id', (req, res) => {
 });
 
 // Subtask routes — each subtask is a real Task with parent_task_id
-tasksRouter.get('/:id/subtasks', (req, res) => {
+tasksRouter.get('/:id/subtasks', async (req, res) => {
   const parent = getTask(req.params.id);
   if (!parent) return res.status(404).json({ error: 'Task not found' });
 
   if (parent.hermes_kanban_task_id) {
     try {
-      syncKanbanChildrenForTask(parent);
+      await syncKanbanChildrenForTask(parent);
     } catch (err) {
       console.warn('[kanban-bridge] Automatic child sync skipped:', err instanceof Error ? err.message : err);
     }
@@ -159,13 +263,17 @@ tasksRouter.post('/:id/subtasks', (req, res) => {
   const parent = getTask(req.params.id);
   if (!parent) return res.status(404).json({ error: 'Task not found' });
 
-  const { title, description, delegate, agent_model, reasoning_effort, priority, labels, assignee } = req.body;
+  const { title, description, delegate, agent_model, reasoning_effort, priority, labels, assignee, github_pr_url } = req.body;
   if (!title || typeof title !== 'string') {
     return res.status(400).json({ error: 'title is required' });
   }
 
   // If delegation requested and description not provided, use title as description
   const resolvedDescription = typeof description === 'string' ? description : title;
+  const explicitSubtaskPrUrl = typeof github_pr_url === 'string' && github_pr_url.trim()
+    ? extractGitHubPrRefs(github_pr_url.trim())[0]?.url ?? github_pr_url.trim()
+    : extractGitHubPrRefs(`${title}\n${resolvedDescription}`)[0]?.url ?? null;
+  const resolvedSubtaskPrUrl = explicitSubtaskPrUrl ?? parent.github_pr_url ?? null;
   const resolvedLabelsJson = Array.isArray(labels) ? JSON.stringify(labels) : null;
 
   const shouldCreateKanban = delegate || !!parent.hermes_kanban_task_id;
@@ -194,6 +302,14 @@ tasksRouter.post('/:id/subtasks', (req, res) => {
     labels_json: resolvedLabelsJson,
     assignee: assignee ?? undefined,
     delegation_status: delegate ? 'queued' : undefined,
+    github_pr_url: resolvedSubtaskPrUrl,
+    github_pr_number: explicitSubtaskPrUrl ? extractGitHubPrRefs(explicitSubtaskPrUrl)[0]?.number : parent.github_pr_number,
+    github_pr_state: explicitSubtaskPrUrl ? undefined : parent.github_pr_state,
+    github_pr_head_ref: explicitSubtaskPrUrl ? undefined : parent.github_pr_head_ref,
+    github_pr_head_sha: explicitSubtaskPrUrl ? undefined : parent.github_pr_head_sha,
+    github_checks_status: explicitSubtaskPrUrl ? 'unknown' : parent.github_checks_status,
+    github_checks_summary: explicitSubtaskPrUrl ? 'PR linked from subtask content — sync pending' : parent.github_checks_summary,
+    github_checks_updated_at: resolvedSubtaskPrUrl ? Date.now() : undefined,
   });
 
   let subtask = createdSubtask;
@@ -212,7 +328,9 @@ tasksRouter.post('/:id/subtasks', (req, res) => {
         '---',
         `AgentControl parent task: ${parentTask.title} (${parentTask.id})`,
         `AgentControl subtask id: ${subtask.id}`,
-        parentTask.github_pr_url ? `GitHub PR: ${parentTask.github_pr_url}` : null,
+        explicitSubtaskPrUrl
+          ? `GitHub PR: ${explicitSubtaskPrUrl}`
+          : parentTask.github_pr_url ? `GitHub PR: ${parentTask.github_pr_url}` : null,
         parentTask.github_pr_head_ref ? `Shared branch: ${parentTask.github_pr_head_ref}` : null,
         'Commit final work to the shared PR/worktree associated with the parent AgentControl task.',
       ].filter(Boolean).join('\n');
@@ -226,14 +344,14 @@ tasksRouter.post('/:id/subtasks', (req, res) => {
       const updatedWithKanban = updateTask(subtask.id, {
         hermes_kanban_task_id: kanbanId,
         delegation_profile: kanbanAssignProfile,
-        github_pr_url: parentTask.github_pr_url,
-        github_pr_number: parentTask.github_pr_number,
-        github_pr_state: parentTask.github_pr_state,
-        github_pr_head_ref: parentTask.github_pr_head_ref,
-        github_pr_head_sha: parentTask.github_pr_head_sha,
-        github_checks_status: parentTask.github_checks_status,
-        github_checks_summary: parentTask.github_checks_summary,
-        github_checks_updated_at: parentTask.github_checks_updated_at,
+        github_pr_url: resolvedSubtaskPrUrl,
+        github_pr_number: explicitSubtaskPrUrl ? extractGitHubPrRefs(explicitSubtaskPrUrl)[0]?.number : parentTask.github_pr_number,
+        github_pr_state: explicitSubtaskPrUrl ? undefined : parentTask.github_pr_state,
+        github_pr_head_ref: explicitSubtaskPrUrl ? undefined : parentTask.github_pr_head_ref,
+        github_pr_head_sha: explicitSubtaskPrUrl ? undefined : parentTask.github_pr_head_sha,
+        github_checks_status: explicitSubtaskPrUrl ? 'unknown' : parentTask.github_checks_status,
+        github_checks_summary: explicitSubtaskPrUrl ? 'PR linked from subtask content — sync pending' : parentTask.github_checks_summary,
+        github_checks_updated_at: resolvedSubtaskPrUrl ? Date.now() : parentTask.github_checks_updated_at,
       });
       if (updatedWithKanban) subtask = updatedWithKanban;
     } catch (e) {
@@ -265,15 +383,39 @@ tasksRouter.post('/:id/subtasks', (req, res) => {
   res.status(201).json({ parent: updatedParent ?? parent, subtasks: getSubtasks(req.params.id), runId });
 });
 
-tasksRouter.post('/:id/kanban/sync', (req, res) => {
+tasksRouter.post('/:id/kanban/sync', async (req, res) => {
   const task = getTask(req.params.id);
   if (!task) return res.status(404).json({ error: 'Task not found' });
 
   try {
-    const result = syncKanbanChildrenForTask(task);
+    const extraChildIds = Array.isArray(req.body?.extraChildIds)
+      ? req.body.extraChildIds.filter((id: unknown): id is string => typeof id === 'string')
+      : [];
+    const result = await syncKanbanChildrenForTask(task, { extraChildIds });
     res.json(result);
   } catch (err) {
     res.status(400).json({ error: err instanceof Error ? err.message : 'Sync failed' });
+  }
+});
+
+tasksRouter.post('/:id/kanban/sync-from-chat', async (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).json({ error: 'Task not found' });
+  if (!task.hermes_kanban_task_id) return res.status(400).json({ error: 'Task has no kanban mapping' });
+
+  try {
+    const messages = await adapter.getMessages(task.id, task.id);
+    const extraChildIds = extractKanbanTaskIdsFromText(messages.map((message) => message.content).join('\n'))
+      .filter((id) => id !== task.hermes_kanban_task_id);
+    const refreshed = await refreshTaskGitHubStatus(task, {
+      extraTexts: recentTaskMessageTexts(messages),
+    }).catch(() => null);
+    const result = await syncKanbanChildrenForTask(refreshed ?? task, {
+      extraChildIds,
+    });
+    res.json({ ...result, referencedKanbanIds: extraChildIds });
+  } catch (err) {
+    res.status(400).json({ error: err instanceof Error ? err.message : 'Chat sync failed' });
   }
 });
 
@@ -291,9 +433,11 @@ tasksRouter.get('/:id/kanban', (req, res) => {
   const info = getKanbanTaskInfo(task.hermes_kanban_task_id);
   if (!info) return res.status(404).json({ error: 'Kanban task not found' });
 
+  const synced = syncTaskStatusFromKanban(task).task;
   res.json({
-    kanban_id: task.hermes_kanban_task_id,
-    delegation_profile: task.delegation_profile,
+    kanban_id: synced.hermes_kanban_task_id,
+    delegation_profile: synced.delegation_profile,
+    task: synced,
     kanban: info,
   });
 });
@@ -307,26 +451,39 @@ tasksRouter.get('/:id/kanban/logs', (req, res) => {
   const runs = getKanbanRuns(task.hermes_kanban_task_id, limit);
   const logs = getKanbanLogs(task.hermes_kanban_task_id, limit);
   const comments = getKanbanComments(task.hermes_kanban_task_id, limit);
-  const latestRun = runs[0];
-  const latestStatus = latestRun?.status ?? getKanbanTaskInfo(task.hermes_kanban_task_id)?.status;
-  const nextDelegationStatus: DelegationStatus | undefined = latestStatus === 'blocked'
-    ? 'blocked'
-    : latestStatus === 'done' || latestStatus === 'review' || latestRun?.outcome === 'success'
-      ? 'review'
-      : latestStatus === 'running'
-        ? 'running'
-        : undefined;
-  if (nextDelegationStatus && task.delegation_status !== nextDelegationStatus) {
-    const updated = updateTask(task.id, { delegation_status: nextDelegationStatus });
-    if (updated) broadcast({ type: 'task_updated', task: updated });
-  }
+  const synced = syncTaskStatusFromKanban(task).task;
   res.json({
-    kanban_id: task.hermes_kanban_task_id,
+    kanban_id: synced.hermes_kanban_task_id,
+    task: synced,
     logs,
     events: logs,
     runs,
     comments,
   });
+});
+
+tasksRouter.get('/:id/kanban/transcript', (req, res) => {
+  const task = getTask(req.params.id);
+  if (!task) return res.status(404).type('text/plain').send('Task not found');
+  if (!task.hermes_kanban_task_id) return res.status(404).type('text/plain').send('Task has no kanban mapping');
+
+  const board = findBoardForKanbanTask(task.hermes_kanban_task_id);
+  if (!board) return res.status(404).type('text/plain').send('Kanban task not found');
+
+  const path = getBoardTaskTranscriptPath(board, task.hermes_kanban_task_id);
+  if (!path) {
+    return res
+      .status(200)
+      .type('text/plain')
+      .send('Worker transcript not found yet. It appears after the Hermes worker starts.');
+  }
+
+  const content = readFileSync(path, 'utf-8');
+  const trimmed = content.length > 200_000
+    ? `...(truncated to last 200KB; full size ${content.length} bytes)\n${content.slice(content.length - 200_000)}`
+    : content;
+
+  res.type('text/plain').send(trimmed);
 });
 
 tasksRouter.post('/:id/move', async (req, res) => {
@@ -338,19 +495,17 @@ tasksRouter.post('/:id/move', async (req, res) => {
   const current = getTask(req.params.id);
   if (!current) return res.status(404).json({ error: 'Task not found' });
 
-  if (status === 'done' && current.status !== 'done') {
-    const mergeResult = await mergeLinkedPullRequestForTask(current);
-    if (mergeResult.status !== 'merged') {
-      return res.status(409).json({
-        error: mergeResult.message,
-        code: mergeResult.status === 'auto_merge_enabled' ? 'PR_MERGE_PENDING' : 'PR_MERGE_BLOCKED',
-        merge: mergeResult,
-      });
-    }
+  const result = status === 'done'
+    ? await completeTaskWithLinkedPrMerge(req.params.id)
+    : { ...updateTaskStatus(req.params.id, status), githubMerge: null };
+  if (!result.task) return res.status(404).json({ error: 'Task not found' });
+  if (result.githubMerge?.status === 'blocked' || result.githubMerge?.status === 'auto_merge_enabled') {
+    return res.status(409).json({
+      error: result.githubMerge.message,
+      task: result.task,
+      subtasksCompleted: result.subtasksCompleted,
+      githubMerge: result.githubMerge,
+    });
   }
-
-  const updated = updateTask(req.params.id, { status });
-  if (!updated) return res.status(404).json({ error: 'Task not found' });
-  broadcast({ type: 'task_updated', task: updated });
-  res.json({ task: updated });
+  res.json({ task: result.task, subtasksCompleted: result.subtasksCompleted, githubMerge: result.githubMerge });
 });

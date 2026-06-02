@@ -1,0 +1,42 @@
+<svg width="192" height="192" viewBox="0 0 192 192" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">AgentControl logo</title>
+  <desc id="desc">A professional white autonomous agent mark: a controlled diamond loop with a central agent node and orbital signal points.</desc>
+  <defs>
+    <linearGradient id="agentcontrol-bg" x1="28" y1="20" x2="168" y2="176" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#111827"/>
+      <stop offset="0.48" stop-color="#18181B"/>
+      <stop offset="1" stop-color="#020617"/>
+    </linearGradient>
+    <linearGradient id="agentcontrol-edge" x1="36" y1="24" x2="160" y2="172" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.38"/>
+      <stop offset="0.55" stop-color="#FFFFFF" stop-opacity="0.12"/>
+      <stop offset="1" stop-color="#FFFFFF" stop-opacity="0.28"/>
+    </linearGradient>
+    <filter id="soft-shadow" x="-20%" y="-20%" width="140%" height="140%" color-interpolation-filters="sRGB">
+      <feDropShadow dx="0" dy="10" stdDeviation="12" flood-color="#000000" flood-opacity="0.32"/>
+    </filter>
+  </defs>
+
+  <rect x="12" y="12" width="168" height="168" rx="42" fill="url(#agentcontrol-bg)" filter="url(#soft-shadow)"/>
+  <rect x="13.5" y="13.5" width="165" height="165" rx="40.5" stroke="url(#agentcontrol-edge)" stroke-width="3"/>
+
+  <!-- Controlled autonomous-agent loop, inspired by an impossible AgentSelly-style knot. -->
+  <path d="M96 35.5L132.5 54.4L156.5 96L132.5 137.6L96 156.5L59.5 137.6L35.5 96L59.5 54.4L96 35.5Z" stroke="#FFFFFF" stroke-width="8" stroke-linejoin="round"/>
+  <path d="M96 57L120.5 70.2L135 96L120.5 121.8L96 135L71.5 121.8L57 96L71.5 70.2L96 57Z" stroke="#FFFFFF" stroke-width="7" stroke-linejoin="round" stroke-opacity="0.78"/>
+
+  <!-- Circuit/control links. -->
+  <path d="M96 57V35.5" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+  <path d="M135 96H156.5" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+  <path d="M96 135V156.5" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+  <path d="M57 96H35.5" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Agent core: head + torso inside command node. -->
+  <circle cx="96" cy="88" r="12" fill="#FFFFFF"/>
+  <path d="M73 123C76.9 109.9 85.3 103.5 96 103.5C106.7 103.5 115.1 109.9 119 123" stroke="#FFFFFF" stroke-width="8" stroke-linecap="round"/>
+
+  <!-- Signal points / delegated subagents. -->
+  <circle cx="96" cy="35.5" r="7.5" fill="#FFFFFF"/>
+  <circle cx="156.5" cy="96" r="7.5" fill="#FFFFFF"/>
+  <circle cx="96" cy="156.5" r="7.5" fill="#FFFFFF"/>
+  <circle cx="35.5" cy="96" r="7.5" fill="#FFFFFF"/>
+</svg>

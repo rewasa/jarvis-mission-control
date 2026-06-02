@@ -79,7 +79,7 @@ export function Sidebar() {
         ) : (
           <div className="flex items-center justify-between w-full px-2">
             <button onClick={() => navigate('/')} className="shrink-0" title="Home">
-              <img src="/logo.png" alt="Logo" className="w-9 h-9" />
+              <img src="/logo.svg" alt="AgentControl" className="h-9 w-9" />
             </button>
             <button
               onClick={toggleSidebar}

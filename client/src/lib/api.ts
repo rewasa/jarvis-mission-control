@@ -3,6 +3,7 @@ import type {
   AgentModelsResponse,
   AgentRunSettings,
   AppVersion,
+  CompleteTaskResponse,
   CompactResult,
   FileCreateResponse,
   FileCreateType,
@@ -67,8 +68,15 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
     ...rest,
   });
   if (!res.ok) {
-    const body = await res.json().catch(() => ({}));
-    const message = isRecord(body) && typeof body.error === 'string' ? body.error : `HTTP ${res.status}`;
+    const contentType = res.headers.get('content-type') ?? '';
+    const body = contentType.includes('application/json')
+      ? await res.json().catch(() => ({}))
+      : await res.text().catch(() => '');
+    const message = isRecord(body) && typeof body.error === 'string'
+      ? body.error
+      : typeof body === 'string' && body.trim()
+        ? body.trim()
+        : `HTTP ${res.status}`;
     const code = isRecord(body) && typeof body.code === 'string' ? body.code : undefined;
     throw new ApiError(message, res.status, code, body);
   }
@@ -88,7 +96,7 @@ export function fetchTask(id: string) {
 }
 
 export function moveTask(id: string, status: TaskStatus) {
-  return request<{ task: Task }>(`/tasks/${id}/move`, {
+  return request<CompleteTaskResponse>(`/tasks/${id}/move`, {
     method: 'POST',
     body: JSON.stringify({ status }),
   });
@@ -99,7 +107,7 @@ export function deleteTask(id: string) {
 }
 
 export function patchTask(id: string, fields: { title?: string; description?: string; status?: TaskStatus; priority?: number | null; labels_json?: string | null; assignee?: string | null; delegation_status?: string | null }) {
-  return request<{ task: Task }>(`/tasks/${id}`, {
+  return request<CompleteTaskResponse>(`/tasks/${id}`, {
     method: 'PATCH',
     body: JSON.stringify(fields),
   });
@@ -182,6 +190,12 @@ export function fetchSubtasks(taskId: string) {
 
 export function syncTaskKanbanSubtasks(taskId: string) {
   return request<SubtaskResponse & { imported: number; updated: number }>(`/tasks/${taskId}/kanban/sync`, {
+    method: 'POST',
+  });
+}
+
+export function syncTaskKanbanSubtasksFromChat(taskId: string) {
+  return request<SubtaskResponse & { imported: number; updated: number; referencedKanbanIds: string[] }>(`/tasks/${taskId}/kanban/sync-from-chat`, {
     method: 'POST',
   });
 }
