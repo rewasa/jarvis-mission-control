@@ -79,6 +79,7 @@ export function Header() {
   const isSkills = location.pathname === '/skills' || location.pathname.startsWith('/skills/');
   const isFiles = location.pathname === '/files';
   const isTerminal = location.pathname === '/terminal';
+  const isDesign = location.pathname === '/design';
   const isTaskDetail = Boolean(taskId);
 
   let title = 'Tasks';
@@ -95,6 +96,8 @@ export function Header() {
     title = 'Files';
   } else if (isTerminal) {
     title = 'Terminal';
+  } else if (isDesign) {
+    title = 'Design';
   } else if (isNewTask) {
     title = 'New Task';
     showParent = true;

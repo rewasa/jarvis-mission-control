@@ -1,15 +1,16 @@
 import {
   DndContext,
   DragOverlay,
-  PointerSensor,
+  MouseSensor,
+  TouchSensor,
   useSensor,
   useSensors,
   closestCorners,
   type DragStartEvent,
   type DragEndEvent,
 } from '@dnd-kit/core';
-import { AlertTriangle, Search, SlidersHorizontal, Wrench, X } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { AlertTriangle, Search, Wrench, X } from 'lucide-react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { ScheduledTask, Task, TaskStatus } from '@shared/types';
 import { TASK_STATUSES } from '@shared/types';
@@ -114,7 +115,6 @@ export function Board() {
   const taskScope = useStore((s) => s.boardTaskScope);
   const searchQuery = useStore((s) => s.boardSearchQuery);
   const mobileColumn = useStore((s) => s.boardMobileColumn);
-  const setTaskScope = useStore((s) => s.setBoardTaskScope);
   const setSearchQuery = useStore((s) => s.setBoardSearchQuery);
   const setMobileColumn = useStore((s) => s.setBoardMobileColumn);
   const [scheduledTasks, setScheduledTasks] = useState<ScheduledTask[]>([]);
@@ -157,8 +157,13 @@ export function Board() {
     };
   }, []);
 
+  // Mouse: drag starts after a small move (desktop).
+  // Touch: a short press-and-hold starts a drag, while a quick swipe is left to
+  // the browser so horizontal swiping between columns and vertical scrolling
+  // inside a column both work on mobile.
   const sensors = useSensors(
-    useSensor(PointerSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(MouseSensor, { activationConstraint: { distance: 5 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 180, tolerance: 8 } }),
   );
 
   function handleDragStart(event: DragStartEvent) {
@@ -232,9 +237,18 @@ export function Board() {
   const deleteAllLabel = deleteAllStatus ? STATUS_META[deleteAllStatus].label : '';
   const deleteAllCount = deleteAllTasks.length;
   const deleteAllTaskWord = deleteAllCount === 1 ? 'task' : 'tasks';
-  const visibleTaskCount = TASK_STATUSES.reduce((total, status) => total + grouped[status].length, 0);
-  const activeFilterCount = (taskScope === 'all' ? 1 : 0) + (normalizedSearch ? 1 : 0);
-  const mobileVisibleStatuses = TASK_STATUSES.filter((status) => grouped[status].length > 0 || status === mobileColumn);
+
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  // Restore the last-viewed column on initial mount so the board reopens where you left off.
+  useEffect(() => {
+    if (!scrollContainerRef.current) return;
+    const activeCol = scrollContainerRef.current.querySelector(`[data-status="${mobileColumn}"]`);
+    if (activeCol) {
+      activeCol.scrollIntoView({ behavior: 'auto', inline: 'start', block: 'nearest' });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []); // Only restore scroll on initial mount
 
   return (
     <DndContext
@@ -245,77 +259,29 @@ export function Board() {
     >
       <div className="flex flex-1 min-h-0 flex-col">
         <RecurringSummaryStrip scheduledTasks={scheduledTasks} />
-        <div className="mx-3 mt-3 rounded-2xl border border-zinc-200 bg-white/95 p-2 shadow-sm backdrop-blur sm:mx-6 sm:mt-4 sm:p-3 dark:border-zinc-800 dark:bg-zinc-950/95">
-          <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-            <div className="flex min-w-0 items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-              <span className="inline-flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-zinc-100 text-zinc-600 dark:bg-zinc-900 dark:text-zinc-300">
-                <SlidersHorizontal size={15} />
-              </span>
-              <div className="min-w-0">
-                <p className="text-sm font-semibold text-zinc-900 dark:text-zinc-100">Filter tasks</p>
-                <p className="truncate">{visibleTaskCount} visible{activeFilterCount ? ` · ${activeFilterCount} active filters` : ''}</p>
-              </div>
-            </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-end">
-              <label className="relative flex min-w-0 flex-1 sm:w-80 sm:flex-none">
-                <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
-                <input
-                  type="search"
-                  value={searchQuery}
-                  onChange={(event) => setSearchQuery(event.target.value)}
-                  placeholder="Search title, profile, Kanban ID, PR..."
-                  className="h-11 w-full rounded-xl border border-zinc-200 bg-zinc-50 pl-9 pr-10 text-base text-zinc-900 outline-none transition-colors placeholder:text-zinc-400 focus:border-zinc-400 focus:bg-white sm:h-10 sm:text-sm dark:border-zinc-800 dark:bg-zinc-900/70 dark:text-zinc-100 dark:focus:border-zinc-600 dark:focus:bg-zinc-950"
-                />
-                {searchQuery && (
-                  <button
-                    type="button"
-                    onClick={() => setSearchQuery('')}
-                    aria-label="Clear search"
-                    className="absolute right-2 top-1/2 inline-flex h-7 w-7 -translate-y-1/2 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-                  >
-                    <X size={14} />
-                  </button>
-                )}
-              </label>
-
-              <div className="grid grid-cols-2 rounded-xl border border-zinc-200 bg-zinc-50 p-1 text-sm font-semibold shadow-inner sm:flex dark:border-zinc-800 dark:bg-zinc-900/70">
-                <button
-                  type="button"
-                  onClick={() => setTaskScope('main')}
-                  className={`min-h-10 rounded-lg px-3 transition-colors ${taskScope === 'main' ? 'bg-zinc-900 text-white shadow-sm dark:bg-zinc-100 dark:text-zinc-950' : 'text-zinc-600 hover:bg-white dark:text-zinc-400 dark:hover:bg-zinc-950'}`}
-                >
-                  Main tasks
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setTaskScope('all')}
-                  className={`min-h-10 rounded-lg px-3 transition-colors ${taskScope === 'all' ? 'bg-zinc-900 text-white shadow-sm dark:bg-zinc-100 dark:text-zinc-950' : 'text-zinc-600 hover:bg-white dark:text-zinc-400 dark:hover:bg-zinc-950'}`}
-                >
-                  All tasks
-                </button>
-              </div>
-            </div>
-          </div>
-
-          <div className="mt-3 flex gap-1 overflow-x-auto pb-1 md:hidden">
-            {mobileVisibleStatuses.map((status) => (
+        <div className="mx-3 mt-3 sm:mx-6 sm:mt-4">
+          <label className="relative mx-auto flex min-w-0 items-center sm:max-w-md">
+            <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
+            <input
+              type="search"
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+              placeholder="Search tasks..."
+              className="h-9 w-full rounded-xl border border-zinc-200 bg-white/95 pl-9 pr-9 text-base text-zinc-900 shadow-sm outline-none backdrop-blur transition-colors placeholder:text-zinc-400 focus:border-zinc-400 sm:h-10 sm:text-sm dark:border-zinc-800 dark:bg-zinc-950/95 dark:text-zinc-100 dark:focus:border-zinc-600"
+            />
+            {searchQuery && (
               <button
-                key={status}
                 type="button"
-                onClick={() => setMobileColumn(status)}
-                className={`inline-flex min-h-10 shrink-0 items-center gap-1.5 rounded-full border px-3 text-xs font-semibold transition-colors ${mobileColumn === status
-                  ? 'border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-950'
-                  : 'border-zinc-200 bg-white text-zinc-600 dark:border-zinc-800 dark:bg-zinc-950 dark:text-zinc-300'
-                }`}
+                onClick={() => setSearchQuery('')}
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 inline-flex h-6 w-6 -translate-y-1/2 items-center justify-center rounded-lg text-zinc-400 transition-colors hover:bg-zinc-200 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
               >
-                <span>{STATUS_META[status].label}</span>
-                <span className={`rounded-full px-1.5 py-0.5 ${mobileColumn === status ? 'bg-white/20' : 'bg-zinc-100 dark:bg-zinc-800'}`}>{grouped[status].length}</span>
+                <X size={14} />
               </button>
-            ))}
-          </div>
+            )}
+          </label>
         </div>
-        <div className="flex flex-1 snap-x snap-mandatory gap-4 overflow-x-auto overflow-y-hidden p-3 min-h-0 overscroll-x-contain pb-5 sm:gap-6 sm:p-6 sm:pb-6">
+        <div ref={scrollContainerRef} className="flex flex-1 snap-x snap-mandatory gap-4 overflow-x-auto overflow-y-hidden p-3 min-h-0 overscroll-x-contain pb-5 sm:gap-6 sm:p-6 sm:pb-6">
           {TASK_STATUSES.map((status, index) => (
             <Column
               key={status}
@@ -323,7 +289,6 @@ export function Board() {
               tasks={grouped[status]}
               taskRuns={taskRuns}
               isLast={index === TASK_STATUSES.length - 1}
-              isMobileActive={mobileColumn === status}
               onMobileActivate={() => setMobileColumn(status)}
               onRequestDeleteAll={handleRequestDeleteAll}
             />

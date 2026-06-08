@@ -10,6 +10,7 @@ import { SkillsPage } from './components/SkillsPage';
 import { FileBrowserPage } from './components/FileBrowserPage';
 import { TerminalPage } from './components/TerminalPage';
 import { KanbanPage } from './components/KanbanPage';
+import { DesignPage } from './components/DesignPage';
 import { Toaster } from 'sonner';
 import { useTasks } from './hooks/useTasks';
 import { useTheme } from './hooks/useTheme';
@@ -40,6 +41,7 @@ function AppShell() {
             <Route path="/files" element={<FileBrowserPage />} />
             <Route path="/terminal" element={<TerminalPage />} />
             <Route path="/kanban" element={<KanbanPage />} />
+            <Route path="/design" element={<DesignPage />} />
             <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </HeaderProvider>

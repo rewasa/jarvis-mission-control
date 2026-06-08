@@ -1,6 +1,6 @@
 import { useDroppable } from '@dnd-kit/core';
 import { MoreHorizontal, Plus } from 'lucide-react';
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import type { Task, TaskRunState, TaskStatus } from '@shared/types';
 import { STATUS_META } from '../lib/constants';
@@ -13,7 +13,6 @@ interface ColumnProps {
   tasks: Task[];
   taskRuns: Map<string, TaskRunState>;
   isLast?: boolean;
-  isMobileActive?: boolean;
   onMobileActivate: () => void;
   onRequestDeleteAll: (status: TaskStatus) => void;
 }
@@ -23,7 +22,6 @@ export function Column({
   tasks,
   taskRuns,
   isLast = false,
-  isMobileActive = false,
   onMobileActivate,
   onRequestDeleteAll,
 }: ColumnProps) {
@@ -32,6 +30,21 @@ export function Column({
   const navigate = useNavigate();
   const [menuPosition, setMenuPosition] = useState<{ x: number; y: number } | null>(null);
   const showAddButton = status === 'todo';
+  const columnRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!columnRef.current) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (entry.isIntersecting) {
+          onMobileActivate();
+        }
+      },
+      { threshold: 0.6 }
+    );
+    observer.observe(columnRef.current);
+    return () => observer.disconnect();
+  }, [onMobileActivate]);
 
   const openMenu = useCallback((button: HTMLButtonElement) => {
     const rect = button.getBoundingClientRect();
@@ -42,12 +55,11 @@ export function Column({
 
   return (
     <div
-      onPointerDown={onMobileActivate}
+      ref={columnRef}
+      data-status={status}
       onFocusCapture={onMobileActivate}
-      className={`group/column flex flex-col min-w-[min(82vw,272px)] max-w-[360px] flex-[0_0_min(82vw,360px)] snap-start sm:min-w-[272px] sm:flex-1 ${
-        isMobileActive ? 'order-first md:order-none' : 'hidden md:flex'
-      } ${
-        isLast ? 'pr-0' : 'border-r border-zinc-200 pr-6 dark:border-zinc-800'
+      className={`group/column flex flex-col min-h-0 min-w-[min(82vw,272px)] max-w-[360px] flex-[0_0_min(82vw,360px)] snap-start sm:min-w-[272px] sm:flex-1 ${
+        isLast ? 'pr-0' : 'border-r border-zinc-200 pr-4 sm:pr-6 dark:border-zinc-800'
       }`}
     >
       <div className="flex items-center gap-2 mb-3 pl-1">
@@ -82,7 +94,7 @@ export function Column({
       </div>
       <div
         ref={setNodeRef}
-        className={`group/body flex flex-col gap-2 flex-1 rounded-lg transition-[background-color,box-shadow] duration-200 min-h-[120px] ${
+        className={`group/body flex flex-col gap-2 flex-1 min-h-0 overflow-y-auto pb-6 rounded-lg transition-[background-color,box-shadow] duration-200 ${
           isOver
             ? 'bg-zinc-100/60 dark:bg-zinc-800/20 ring-2 ring-zinc-400/40'
             : ''

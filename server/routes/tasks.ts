@@ -4,7 +4,7 @@ import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewe
 import { broadcast } from '../events.js';
 import { adapter } from '../app.js';
 import { startTaskChatRun } from './chat.js';
-import { createKanbanTask, ensureKanbanRootTaskForAgentControlTask, extractKanbanTaskIdsFromText, findBoardForKanbanTask, getBoardTaskTranscriptPath, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, syncKanbanChildrenForTask, syncTaskStatusFromKanban } from '../services/kanban-bridge.js';
+import { createKanbanTask, ensureKanbanRootTaskForAgentControlTask, extractKanbanTaskIdsFromText, findBoardForKanbanTask, getBoardTaskTranscriptPath, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, syncKanbanChildrenForTask, syncTaskStatusFromKanban, updateKanbanTaskStatusFromAgentControl } from '../services/kanban-bridge.js';
 import { refreshTaskGitHubStatus, extractGitHubPrRefs } from '../services/github-status.js';
 import { mergeLinkedPullRequestForTask } from '../services/github-merge.js';
 import type { TaskMessage } from '../../shared/types.js';
@@ -40,6 +40,9 @@ function updateTaskStatus(taskId: string, status: TaskStatus): { task: ReturnTyp
   if (!current) return { task: undefined, subtasksCompleted: 0 };
 
   const subtasksCompleted = status === 'done' ? completeSubtaskTree(taskId) : 0;
+  if (current.hermes_kanban_task_id) {
+    updateKanbanTaskStatusFromAgentControl(current.hermes_kanban_task_id, status);
+  }
   const updated = updateTask(taskId, { status });
   if (updated) broadcast({ type: 'task_updated', task: updated });
 

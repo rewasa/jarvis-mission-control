@@ -4,6 +4,7 @@ import { useStore } from '../lib/store';
 import { fetchTasks } from '../lib/api';
 import { playCompletionSound } from './useSoundOnComplete';
 import { useVisibilityRefresh } from './useVisibilityRefresh';
+import { invalidateConversationCache } from './useChat';
 
 export function useTasks() {
   const setTasks = useStore((s) => s.setTasks);
@@ -98,6 +99,21 @@ export function useTasks() {
             setTaskRuns(event.runs);
           } else if (event.type === 'task_run_updated') {
             setTaskRun(event.run);
+            if (event.run.status === 'done' || event.run.status === 'error' || event.run.status === 'stopped') {
+              invalidateConversationCache(event.run.taskId);
+            }
+          } else if (event.type === 'agent_settings_updated') {
+            // Trigger a storage event manually so `useAgentConfig` hooks across the app update
+            try {
+              if (event.defaults) {
+                window.localStorage.setItem('agentcontrol.agentDefaults.v1', JSON.stringify(event.defaults));
+                new BroadcastChannel('agentcontrol.agentDefaults.v1').postMessage(event.defaults);
+                window.dispatchEvent(new StorageEvent('storage', {
+                  key: 'agentcontrol.agentDefaults.v1',
+                  newValue: JSON.stringify(event.defaults)
+                }));
+              }
+            } catch {}
           }
         } catch {}
       };

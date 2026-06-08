@@ -3,6 +3,7 @@ import { getTask, getSubtasks } from '../db/queries.js';
 import { isRecord, toErrorMessage } from '../errors.js';
 import { taskRunSettings } from '../agent-settings.js';
 import { REASONING_EFFORTS } from '../../shared/types.js';
+import { broadcast } from '../events.js';
 import type { AgentDefaults, Task, TaskAgentSettings, ReasoningEffort } from '../../shared/types.js';
 import type { HermesWorkerAdapter } from '../adapters/hermes-worker.js';
 
@@ -84,6 +85,7 @@ export function createAgentRouter(adapter: HermesWorkerAdapter): Router {
 
     try {
       const defaults = await adapter.setDefaults(updates);
+      broadcast({ type: 'agent_settings_updated', defaults });
       res.json(defaults);
     } catch (error) {
       res.status(503).json({ error: toErrorMessage(error, 'Failed to update defaults') });

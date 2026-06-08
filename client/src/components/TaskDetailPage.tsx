@@ -1,7 +1,7 @@
 import { useState, useCallback, useEffect, useRef, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { Link, useParams, useNavigate, useLocation } from 'react-router-dom';
-import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock, ArrowRight, MessageSquareText, X, Activity, ExternalLink, GitPullRequest, RefreshCw, Bot, Link2, Save, FileText, Radio, ListTree } from 'lucide-react';
+import { MoreHorizontal, Trash2, Loader2, Pencil, Check, GitBranch, AlertTriangle, CheckCircle2, Clock, ArrowRight, MessageSquareText, X, Activity, ExternalLink, GitPullRequest, RefreshCw, Bot, Link2, Save, FileText, Radio, ListTree, Mail } from 'lucide-react';
 
 import { DeleteConfirmModal } from './DeleteConfirmModal';
 import { StatusIcon } from './StatusIcon';
@@ -1413,6 +1413,28 @@ export function TaskDetailPage() {
                         <div className="lg:hidden my-1 border-t border-zinc-200 dark:border-zinc-800" />
                       </>
                     )}
+                    <button
+                      onClick={() => {
+                        setShowMenu(false);
+                        const lines = [
+                          `Status: ${STATUS_META[task.status].label}`,
+                          task.delegation_profile ? `Profile: ${task.delegation_profile}` : null,
+                          task.github_pr_url ? `PR: ${task.github_pr_url}` : null,
+                          '',
+                          task.description?.trim() ? task.description.trim() : '(no description)',
+                          '',
+                          `Open in AgentControl: ${window.location.href}`,
+                        ].filter((line) => line !== null);
+                        const subject = encodeURIComponent(`[Task] ${task.title}`);
+                        const body = encodeURIComponent(lines.join('\n'));
+                        window.location.href = `mailto:?subject=${subject}&body=${body}`;
+                      }}
+                      className="w-full flex items-center gap-2.5 px-3 py-1.5 text-sm text-zinc-700 dark:text-zinc-300 hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-colors text-left"
+                    >
+                      <Mail size={14} strokeWidth={2} />
+                      Email
+                    </button>
+                    <div className="my-1 border-t border-zinc-200 dark:border-zinc-800" />
                     <button
                       onClick={() => { setShowMenu(false); setShowDeleteConfirm(true); }}
                       className="w-full flex items-center gap-2.5 px-3 py-1.5 text-sm text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors text-left"

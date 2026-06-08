@@ -144,7 +144,15 @@ export function fetchSession(taskId: string) {
 }
 
 export function fetchHealth() {
-  return request<{ ok: boolean; hermes: boolean }>('/health');
+  return request<{ ok: boolean; hermes: boolean; claudeAdapter: boolean }>('/health');
+}
+
+export function fetchAuthStatus() {
+  return request<{ loggedIn: boolean; email?: string; subscriptionType?: string }>('/auth/status');
+}
+
+export function triggerAuthLogin() {
+  return request<{ status: string; message: string }>('/auth/login', { method: 'POST' });
 }
 
 export function fetchAppVersion() {

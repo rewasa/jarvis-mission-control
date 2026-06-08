@@ -24,7 +24,38 @@ const adapter = new HermesWorkerAdapter();
 
 app.get('/api/health', async (_req, res) => {
   const hermes = await adapter.healthCheck();
-  res.json({ ok: true, hermes });
+  let claudeAdapter = false;
+  try {
+    const response = await fetch('http://127.0.0.1:8082/health');
+    claudeAdapter = response.ok;
+  } catch {
+    // Adapter not running — report as false
+  }
+  res.json({ ok: true, hermes, claudeAdapter });
+});
+
+app.get('/api/auth/status', async (_req, res) => {
+  try {
+    const response = await fetch('http://127.0.0.1:8082/auth/status');
+    if (response.ok) {
+      const data = await response.json();
+      res.json(data);
+    } else {
+      res.status(response.status).json({ error: 'Failed to fetch auth status' });
+    }
+  } catch (err) {
+    res.status(502).json({ error: 'Claude adapter is not reachable' });
+  }
+});
+
+app.post('/api/auth/login', async (_req, res) => {
+  try {
+    const response = await fetch('http://127.0.0.1:8082/auth/login', { method: 'POST' });
+    const data = await response.json();
+    res.json(data);
+  } catch (err) {
+    res.status(502).json({ error: 'Claude adapter is not reachable' });
+  }
 });
 
 app.get('/api/version', (_req, res) => {

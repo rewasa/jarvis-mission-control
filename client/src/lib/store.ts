@@ -110,7 +110,7 @@ function buildSubtasksByParent(tasks: Task[]): Map<string, Task[]> {
   return grouped;
 }
 
-export const useStore = create<AppState>((set) => ({
+export const useStore = create<AppState>((set, get) => ({
   tasks: [],
   taskRuns: new Map<string, TaskRunState>(),
   tasksLoaded: false,
@@ -236,6 +236,7 @@ export const useStore = create<AppState>((set) => ({
   },
 
   setBoardMobileColumn: (status) => {
+    if (get().boardMobileColumn === status) return;
     writeStoredString('board.mobileColumn', status);
     set({ boardMobileColumn: status });
   },

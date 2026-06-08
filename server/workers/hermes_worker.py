@@ -950,6 +950,9 @@ def _create_agent(
     callbacks: dict[str, Any] | None = None,
 ) -> Any:
     _ensure_imports()
+    # Force fresh load just in case mtime didn't trigger correctly
+    global _CONFIG_CACHE
+    _CONFIG_CACHE = None
     cfg = _load_config()
     defaults = _defaults_from_config(cfg)
     resolved_reasoning_effort = reasoning_effort or defaults.get("reasoningEffort")

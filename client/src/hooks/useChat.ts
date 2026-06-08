@@ -156,6 +156,35 @@ function messagesWithLiveRun(committed: ChatMessage[], run: LiveChatRun): ChatMe
   return [...committedWithoutLiveRun(committed, live), ...live];
 }
 
+// Module-level cache of fetched conversations keyed by taskId. Survives
+// component remounts so re-opening a previously-viewed task paints instantly
+// (stale-while-revalidate) instead of flashing "Loading conversation...".
+interface CachedConversation {
+  messages: ChatMessage[];
+  context: ContextUsage | null;
+}
+const conversationCache = new Map<string, CachedConversation>();
+const CONVERSATION_CACHE_LIMIT = 50;
+
+function cacheConversation(taskId: string, messages: ChatMessage[], context: ContextUsage | null): void {
+  // Refresh LRU position by re-inserting at the end.
+  conversationCache.delete(taskId);
+  conversationCache.set(taskId, { messages, context });
+  while (conversationCache.size > CONVERSATION_CACHE_LIMIT) {
+    const oldest = conversationCache.keys().next().value;
+    if (oldest === undefined) break;
+    conversationCache.delete(oldest);
+  }
+}
+
+export function invalidateConversationCache(taskId: string): void {
+  conversationCache.delete(taskId);
+}
+
+export function hasCachedConversation(taskId: string): boolean {
+  return conversationCache.has(taskId);
+}
+
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [isStreaming, setIsStreaming] = useState(false);
@@ -355,18 +384,46 @@ export function useChat() {
   }, [teardown]);
 
   const loadMessages = useCallback(async (taskId: string) => {
-    clearAllState();
+    // Reset live/runtime state but seed from cache (if any) instead of blanking
+    // the view — this is what lets a re-opened task paint instantly.
+    teardown();
     taskIdRef.current = taskId;
+    liveRunRef.current = null;
 
-    const { messages: msgs, context: persistedContext } = await fetchMessages(taskId);
-    if (taskIdRef.current !== taskId) return msgs;
+    const cached = conversationCache.get(taskId);
+    if (cached) {
+      committedMessagesRef.current = cached.messages;
+      liveContextRef.current = cached.context;
+      publishState();
+      openLiveSubscription(taskId);
+    } else {
+      committedMessagesRef.current = [];
+      liveContextRef.current = null;
+      setMessages([]);
+      setIsStreaming(false);
+      setStopped(false);
+      setThinkingContent('');
+      setActiveTools([]);
+      setContext(null);
+    }
 
-    committedMessagesRef.current = msgs as ChatMessage[];
-    liveContextRef.current = persistedContext ?? null;
-    publishState();
-    openLiveSubscription(taskId);
-    return msgs;
-  }, [clearAllState, openLiveSubscription, publishState]);
+    try {
+      const { messages: msgs, context: persistedContext } = await fetchMessages(taskId);
+      if (taskIdRef.current !== taskId) return msgs;
+
+      cacheConversation(taskId, msgs as ChatMessage[], persistedContext ?? null);
+      committedMessagesRef.current = msgs as ChatMessage[];
+      liveContextRef.current = persistedContext ?? null;
+      publishState();
+      if (!cached) openLiveSubscription(taskId);
+      return msgs;
+    } catch (err) {
+      // With a cached copy on screen we can swallow a transient revalidation
+      // failure instead of flashing an error over good content.
+      if (cached && taskIdRef.current === taskId) return cached.messages;
+      throw err;
+    }
+  }, [openLiveSubscription, publishState, teardown]);
 
   const appendLocalSendError = useCallback((content: string, error: string) => {
     const now = Date.now();

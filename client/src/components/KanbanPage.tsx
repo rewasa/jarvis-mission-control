@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   Columns3, Layers, ExternalLink, AlertTriangle,
   Loader2, CheckCircle2, Clock,
@@ -31,9 +31,9 @@ function statusColor(status: string): string {
 
 // ── Panel wrapper ──────────────────────────────────────────────────────
 
-function Panel({ title, icon, className = '', children }: { title: string; icon: React.ReactNode; className?: string; children: React.ReactNode }) {
+function Panel({ title, icon, panelId, className = '', children }: { title: string; icon: React.ReactNode; panelId?: string; className?: string; children: React.ReactNode }) {
   return (
-    <div className={`flex flex-col min-h-0 border-r border-zinc-200 dark:border-zinc-800 last:border-r-0 ${className}`}>
+    <div data-panel={panelId} className={`flex flex-col min-h-0 snap-start shrink-0 border-r border-zinc-200 dark:border-zinc-800 last:border-r-0 ${className}`}>
       <div className="flex items-center gap-2 px-4 py-3 border-b border-zinc-200 dark:border-zinc-800 shrink-0">
         {icon}
         <span className="font-semibold text-sm text-zinc-700 dark:text-zinc-200 uppercase tracking-wide">{title}</span>
@@ -280,6 +280,18 @@ export function KanbanPage() {
   const selectedBoardSummary = boards.find((b) => b.name === selectedBoard);
   const selectedTaskInfo = tasks.find((t) => t.kanban_id === selectedTask);
 
+  // ── Horizontal swipe + scroll-position memory (mobile) ──────────────
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const saved = sessionStorage.getItem('kanban.scrollX');
+    if (saved) el.scrollLeft = Number(saved);
+    const onScroll = () => sessionStorage.setItem('kanban.scrollX', String(el.scrollLeft));
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, []);
+
   // ── Determine what the right panel shows ────────────────────────────
   let rightPanelContent: React.ReactNode;
   if (selectedTaskInfo && selectedBoard) {
@@ -301,9 +313,12 @@ export function KanbanPage() {
   }
 
   return (
-    <div className="flex flex-1 min-h-0">
+    <div
+      ref={scrollRef}
+      className="flex flex-1 min-h-0 snap-x snap-mandatory overflow-x-auto overscroll-x-contain md:snap-none md:overflow-x-hidden"
+    >
       {/* BOARD LIST */}
-      <Panel title="Boards" icon={<Columns3 size={16} className="text-indigo-500" />} className="w-56">
+      <Panel title="Boards" icon={<Columns3 size={16} className="text-indigo-500" />} className="w-[78vw] max-w-[280px] shrink-0 snap-start md:w-56 md:shrink">
         <div className="p-2 space-y-1">
           {boards.map((b) => (
             <BoardCard key={b.name} board={b} active={selectedBoard === b.name} onClick={() => selectBoard(b.name)} />
@@ -312,7 +327,7 @@ export function KanbanPage() {
       </Panel>
 
       {/* TASK LIST */}
-      <Panel title="Tasks" icon={<Layers size={16} className="text-indigo-500" />} className="w-64">
+      <Panel title="Tasks" icon={<Layers size={16} className="text-indigo-500" />} className="w-[82vw] max-w-[320px] shrink-0 snap-start md:w-64 md:shrink">
         {loading && !tasks.length ? (
           <div className="flex items-center justify-center py-12"><Loader2 size={20} className="animate-spin text-zinc-400" /></div>
         ) : (
@@ -330,7 +345,7 @@ export function KanbanPage() {
       </Panel>
 
       {/* DETAIL (clean) */}
-      <Panel title="Detail" icon={<span className="text-indigo-500 text-sm font-bold">i</span>} className="flex-1">
+      <Panel title="Detail" icon={<span className="text-indigo-500 text-sm font-bold">i</span>} className="w-[90vw] shrink-0 snap-start md:w-auto md:flex-1 md:shrink">
         {rightPanelContent}
       </Panel>
     </div>

@@ -140,6 +140,8 @@ export interface LiveChatRun {
   goal?: GoalStateSnapshot | null;
   context?: ContextUsage | null;
   error?: string;
+  usedModel?: string | null;
+  usedProvider?: string | null;
 }
 
 export interface ContextUsage {

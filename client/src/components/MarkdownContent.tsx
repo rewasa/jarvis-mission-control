@@ -1,4 +1,4 @@
-import { memo } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Streamdown, type Components, type ControlsConfig } from 'streamdown';
 import { code } from '@streamdown/code';
 import 'streamdown/styles.css';
@@ -56,5 +56,72 @@ export const MarkdownContent = memo(function MarkdownContent({
     >
       {content}
     </Streamdown>
+  );
+});
+
+// Lightweight stand-in shown until a message scrolls near the viewport. Mounting
+// a full Streamdown (markdown parse + Shiki highlighting) for every message in a
+// long conversation freezes the main thread on open; this defers that cost so we
+// only pay it for messages the user can actually see.
+const placeholderClassName = `${compactMarkdownClassName} whitespace-pre-wrap break-words`;
+
+/**
+ * Renders message markdown lazily. Messages start as cheap plain text and only
+ * upgrade to the full Streamdown renderer once they intersect (or get near) the
+ * viewport. `forceMount` opts a message in immediately — used for the tail of the
+ * conversation that's visible on open and for the live-streaming message.
+ *
+ * `content-visibility: auto` lets the browser additionally skip layout/paint for
+ * off-screen rows, and `contain-intrinsic-size` reserves an estimated height so
+ * the scrollbar stays stable while rows are still collapsed.
+ */
+export const DeferredMarkdown = memo(function DeferredMarkdown({
+  content,
+  isStreaming = false,
+  forceMount = false,
+}: {
+  content: string;
+  isStreaming?: boolean;
+  forceMount?: boolean;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+  const [mounted, setMounted] = useState(forceMount);
+
+  useEffect(() => {
+    if (forceMount) {
+      setMounted(true);
+      return;
+    }
+    if (mounted) return;
+    const el = ref.current;
+    if (!el || typeof IntersectionObserver === 'undefined') {
+      setMounted(true);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setMounted(true);
+          observer.disconnect();
+        }
+      },
+      // Mount a screenful early so the upgrade finishes before the row is read.
+      { rootMargin: '600px 0px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [forceMount, mounted]);
+
+  return (
+    <div
+      ref={ref}
+      style={{ contentVisibility: 'auto', containIntrinsicSize: 'auto 120px' }}
+    >
+      {mounted ? (
+        <MarkdownContent content={content} isStreaming={isStreaming} />
+      ) : (
+        <div className={placeholderClassName}>{content}</div>
+      )}
+    </div>
   );
 });

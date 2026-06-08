@@ -163,6 +163,20 @@ function createKanbanFixture(): string {
       't_smoke001', 'Kanban status sync smoke', 'Smoke task body', 'smoke-profile',
       'running', 0, 'smoke', ${now}, ${started}, 'scratch', 0, ${heartbeat}, 1
     );
+    INSERT INTO tasks (
+      id, title, body, assignee, status, priority, created_by, created_at,
+      workspace_kind, consecutive_failures
+    ) VALUES (
+      't_smoke002', 'Kanban status write smoke', 'Write smoke task body', 'smoke-profile',
+      'todo', 0, 'smoke', ${now}, 'scratch', 0
+    );
+    INSERT INTO tasks (
+      id, title, body, assignee, status, priority, created_by, created_at,
+      workspace_kind, consecutive_failures
+    ) VALUES (
+      't_smoke003', 'Kanban complete sync smoke', 'Complete smoke task body', 'smoke-profile',
+      'review', 0, 'smoke', ${now}, 'scratch', 0
+    );
     INSERT INTO task_runs (
       id, task_id, profile, status, worker_pid, last_heartbeat_at, started_at,
       ended_at, outcome, summary, metadata, error
@@ -236,6 +250,74 @@ try {
   assert.equal(kanban.kanban.status, 'running');
   assert.equal(kanban.kanban.latest_run_status, 'running');
   assert.equal(kanban.kanban.latest_run_profile, 'smoke-profile');
+
+  const statusWriteTask = await request<{
+    task: { id: string; status: string; hermes_kanban_task_id: string | null };
+  }>('/api/tasks', {
+    method: 'POST',
+    body: JSON.stringify({
+      title: 'Kanban status write smoke AC task',
+      description: 'Mapped to pre-created Kanban write smoke task.',
+      kanban: false,
+    }),
+  });
+
+  await request(`/api/tasks/${statusWriteTask.task.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ hermes_kanban_task_id: 't_smoke002' }),
+  });
+
+  await request(`/api/tasks/${statusWriteTask.task.id}/move`, {
+    method: 'POST',
+    body: JSON.stringify({ status: 'in_review' }),
+  });
+
+  const moved = await request<{
+    task: { status: string; delegation_status: string | null };
+  }>(`/api/tasks/${statusWriteTask.task.id}`);
+  assert.equal(moved.task.status, 'in_review');
+  assert.equal(moved.task.delegation_status, 'review');
+
+  const movedKanban = await request<{
+    kanban: { status: string };
+  }>(`/api/tasks/${statusWriteTask.task.id}/kanban`);
+  assert.equal(movedKanban.kanban.status, 'review');
+
+  const completeWriteTask = await request<{
+    task: { id: string; status: string; hermes_kanban_task_id: string | null };
+  }>('/api/tasks', {
+    method: 'POST',
+    body: JSON.stringify({
+      title: 'Kanban complete write smoke AC task',
+      description: 'Mapped to pre-created Kanban complete smoke task.',
+      kanban: false,
+    }),
+  });
+
+  await request(`/api/tasks/${completeWriteTask.task.id}`, {
+    method: 'PATCH',
+    body: JSON.stringify({
+      status: 'in_review',
+      delegation_status: 'review',
+      hermes_kanban_task_id: 't_smoke003',
+    }),
+  });
+
+  await request(`/api/tasks/${completeWriteTask.task.id}/move`, {
+    method: 'POST',
+    body: JSON.stringify({ status: 'done' }),
+  });
+
+  const completed = await request<{
+    task: { status: string; delegation_status: string | null };
+  }>(`/api/tasks/${completeWriteTask.task.id}`);
+  assert.equal(completed.task.status, 'done');
+  assert.equal(completed.task.delegation_status, 'done');
+
+  const completedKanban = await request<{
+    kanban: { status: string };
+  }>(`/api/tasks/${completeWriteTask.task.id}/kanban`);
+  assert.equal(completedKanban.kanban.status, 'done');
 
   const logs = await request<{
     task: { status: string; delegation_status: string | null };

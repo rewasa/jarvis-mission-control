@@ -91,6 +91,12 @@ function openKanbanDbForBoard(board: string): Database.Database | null {
   return new Database(dbPath, { readonly: true, fileMustExist: true });
 }
 
+function openWritableKanbanDbForBoard(board: string): Database.Database | null {
+  const dbPath = getKanbanDbPathForBoard(board);
+  if (!existsSync(dbPath)) return null;
+  return new Database(dbPath, { fileMustExist: true });
+}
+
 function openKanbanDb(): Database.Database | null {
   const dbPath = getKanbanDbPath();
   if (!existsSync(dbPath)) return null;
@@ -252,18 +258,157 @@ export function appendKanbanComment(
   ]);
 }
 
+export function updateKanbanTaskStatusFromAgentControl(
+  kanbanId: string | null,
+  status: TaskStatus,
+): void {
+  if (!kanbanId) return;
+
+  const board = findBoardForKanbanTask(kanbanId) ?? KANBAN_BOARD;
+  switch (status) {
+    case 'todo': {
+      setKanbanTaskStatusDirect(
+        board,
+        kanbanId,
+        'todo',
+        'AgentControl moved task to todo',
+      );
+      return;
+    }
+    case 'in_progress': {
+      const info = getKanbanTaskInfo(kanbanId);
+      if (info?.status === 'running') return;
+      setKanbanTaskStatusDirect(
+        board,
+        kanbanId,
+        'running',
+        'AgentControl moved task to in progress',
+      );
+      return;
+    }
+    case 'in_review': {
+      setKanbanTaskStatusDirect(
+        board,
+        kanbanId,
+        'review',
+        'AgentControl moved task to review',
+      );
+      return;
+    }
+    case 'done': {
+      const info = getKanbanTaskInfo(kanbanId);
+      if (info?.status === 'ready' || info?.status === 'running' || info?.status === 'blocked') {
+        runKanbanCli(['complete', kanbanId, '--result', 'Marked done from AgentControl']);
+        return;
+      }
+      setKanbanTaskStatusDirect(
+        board,
+        kanbanId,
+        'done',
+        'AgentControl moved task to done',
+      );
+      return;
+    }
+  }
+}
+
+function setKanbanTaskStatusDirect(
+  board: string,
+  kanbanId: string,
+  status: string,
+  reason: string,
+): void {
+  const conn = openWritableKanbanDbForBoard(board);
+  if (!conn) return;
+  try {
+    const now = Math.floor(Date.now() / 1000);
+    const row = conn.prepare('SELECT status, current_run_id FROM tasks WHERE id = ?').get(kanbanId) as {
+      status: string;
+      current_run_id: number | null;
+    } | undefined;
+    if (!row || row.status === status) return;
+
+    const tx = conn.transaction(() => {
+      if (row.current_run_id !== null) {
+        conn.prepare(`
+          UPDATE task_runs
+             SET status = 'reclaimed',
+                 outcome = 'reclaimed',
+                 summary = COALESCE(summary, ?),
+                 ended_at = COALESCE(ended_at, ?),
+                 claim_lock = NULL,
+                 claim_expires = NULL,
+                 worker_pid = NULL
+           WHERE id = ? AND ended_at IS NULL
+        `).run(reason, now, row.current_run_id);
+      }
+
+      conn.prepare(`
+        UPDATE tasks
+           SET status = ?,
+               claim_lock = NULL,
+               claim_expires = NULL,
+               worker_pid = NULL,
+               current_run_id = NULL
+         WHERE id = ?
+      `).run(status, kanbanId);
+
+      conn.prepare(`
+        INSERT INTO task_events (task_id, run_id, kind, payload, created_at)
+        VALUES (?, ?, 'agentcontrol_status_changed', ?, ?)
+      `).run(
+        kanbanId,
+        row.current_run_id,
+        JSON.stringify({ from: row.status, to: status, reason }),
+        now,
+      );
+    });
+    tx();
+  } finally {
+    conn.close();
+  }
+}
+
+const kanbanTaskBoardCache = new Map<string, string>();
+
+function boardContainsKanbanTask(board: string, kanbanId: string): boolean {
+  const conn = openKanbanDbForBoard(board);
+  if (!conn) return false;
+  try {
+    const row = conn.prepare('SELECT 1 FROM tasks WHERE id = ?').get(kanbanId) as { 1: number } | undefined;
+    return Boolean(row);
+  } finally {
+    conn.close();
+  }
+}
+
 export function findBoardForKanbanTask(kanbanId: string | null): string | null {
   if (!kanbanId) return null;
 
-  for (const board of listKanbanBoards()) {
-    const conn = openKanbanDbForBoard(board.name);
-    if (!conn) continue;
-    try {
-      const row = conn.prepare('SELECT 1 FROM tasks WHERE id = ?').get(kanbanId) as { 1: number } | undefined;
-      if (row) return board.name;
-    } finally {
-      conn.close();
+  const cached = kanbanTaskBoardCache.get(kanbanId);
+  if (cached && boardContainsKanbanTask(cached, kanbanId)) return cached;
+  if (cached) kanbanTaskBoardCache.delete(kanbanId);
+
+  if (boardContainsKanbanTask(KANBAN_BOARD, kanbanId)) {
+    kanbanTaskBoardCache.set(kanbanId, KANBAN_BOARD);
+    return KANBAN_BOARD;
+  }
+
+  const root = resolveKanbanRoot();
+  const boardsDir = join(root, 'kanban', 'boards');
+  if (existsSync(boardsDir)) {
+    for (const entry of readdirSync(boardsDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name === KANBAN_BOARD) continue;
+      if (boardContainsKanbanTask(entry.name, kanbanId)) {
+        kanbanTaskBoardCache.set(kanbanId, entry.name);
+        return entry.name;
+      }
     }
+  }
+
+  if (boardContainsKanbanTask('default', kanbanId)) {
+    kanbanTaskBoardCache.set(kanbanId, 'default');
+    return 'default';
   }
 
   return null;
@@ -530,8 +675,8 @@ function mapKanbanStatus(kanbanStatus: string): MappedStatuses {
     case 'blocked':
       return { status: 'in_progress', delegation_status: 'blocked' };
     case 'review':
-    case 'done':
       return { status: 'in_review', delegation_status: 'review' };
+    case 'done':
     case 'archived':
       return { status: 'done', delegation_status: 'done' };
     default:

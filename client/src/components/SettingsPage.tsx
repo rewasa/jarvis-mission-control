@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Settings, Bot, Sun, Moon, Monitor, Info, Volume2, VolumeX, Play } from 'lucide-react';
+import { Settings, Bot, Sun, Moon, Monitor, Info, Volume2, VolumeX, Play, Wifi, WifiOff } from 'lucide-react';
 import { useTheme, type ThemePreference } from '../hooks/useTheme';
 import { useSoundOnComplete } from '../hooks/useSoundOnComplete';
 import { useAgentConfig } from '../hooks/useAgentConfig';
-import { fetchAppVersion, updateAgentDefaults } from '../lib/api';
+import { fetchAppVersion, fetchHealth, fetchAuthStatus, triggerAuthLogin, updateAgentDefaults } from '../lib/api';
 import type { AppVersion } from '@shared/types';
 import { toErrorMessage } from '../lib/format';
 import { ModelPicker, parseQualifiedModelValue, REASONING_LABELS, type ModelPickerSelection } from './InputToolbar';
@@ -60,6 +60,32 @@ export function SettingsPage() {
   const [savingDefaults, setSavingDefaults] = useState(false);
   const [savedDefaults, setSavedDefaults] = useState(false);
 
+  const [health, setHealth] = useState<{ hermes: boolean; claudeAdapter: boolean } | null>(null);
+  const [authStatus, setAuthStatus] = useState<{ loggedIn: boolean; email?: string; subscriptionType?: string } | null>(null);
+  const [loginMsg, setLoginMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    fetchHealth()
+      .then((h) => { if (!cancelled) setHealth(h); })
+      .catch(() => { if (!cancelled) setHealth(null); });
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (health !== null) {
+      if (health.claudeAdapter) {
+        fetchAuthStatus()
+          .then((st) => { if (!cancelled) setAuthStatus(st); })
+          .catch(() => { if (!cancelled) setAuthStatus(null); });
+      } else {
+        setAuthStatus(null);
+      }
+    }
+    return () => { cancelled = true; };
+  }, [health?.claudeAdapter]);
+
   useEffect(() => {
     let cancelled = false;
     fetchAppVersion()
@@ -113,6 +139,44 @@ export function SettingsPage() {
             </div>
           </div>
         </div>
+
+        <div>
+          <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500 mb-2">Service health</h2>
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-medium text-zinc-900 dark:text-zinc-100">
+              {health?.hermes ? <Wifi size={14} className="text-green-500" /> : <WifiOff size={14} className="text-red-400" />}
+              Hermes worker
+              <span className={`text-xs ${health?.hermes ? 'text-green-500' : 'text-red-400'}`}>
+                {health === null ? '…' : health.hermes ? 'online' : 'offline'}
+              </span>
+            </div>
+            <div className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-zinc-200 dark:border-zinc-800 bg-white dark:bg-zinc-900 text-xs font-medium text-zinc-900 dark:text-zinc-100">
+              {health?.claudeAdapter ? <Wifi size={14} className="text-green-500" /> : <WifiOff size={14} className="text-red-400" />}
+              Claude adapter (8082)
+              <span className={`text-xs ${health?.claudeAdapter ? 'text-green-500' : 'text-red-400'}`}>
+                {health === null ? '…' : health.claudeAdapter ? 'online' : 'offline'}
+              </span>
+            </div>
+          </div>
+        </div>
+        
+        {health?.claudeAdapter && (
+          <div>
+            <h2 className="text-xs font-medium uppercase tracking-wide text-zinc-400 dark:text-zinc-500 mb-2">Claude CLI Auth</h2>
+            <div className="flex flex-wrap items-center gap-3">
+              {authStatus ? (
+                authStatus.loggedIn ? (
+                  <div className="text-sm text-green-500">Logged in as {authStatus.email} ({authStatus.subscriptionType})</div>
+                ) : (
+                  <button onClick={async () => { const res = await triggerAuthLogin(); setLoginMsg(res.message); }} className="px-3 py-1.5 rounded bg-blue-600 text-white text-xs font-medium hover:bg-blue-700">Login to Claude</button>
+                )
+              ) : (
+                <div className="text-sm text-zinc-500">Checking auth...</div>
+              )}
+              {loginMsg && <span className="text-xs text-zinc-500">{loginMsg}</span>}
+            </div>
+          </div>
+        )}
 
         <section
           aria-labelledby="default-model-title"
