@@ -33,6 +33,8 @@ function runState(run: LiveChatRun): TaskRunState {
     startedAt: run.startedAt,
     updatedAt: run.updatedAt,
     goal: run.goal ? { ...run.goal } : null,
+    usedModel: run.usedModel,
+    usedProvider: run.usedProvider,
   };
 }
 
@@ -235,6 +237,8 @@ export function applyEvent(taskId: string, event: StreamEvent): void {
     if (event.context !== undefined) {
       run.context = event.context;
     }
+    if (event.model !== undefined) run.usedModel = event.model;
+    if (event.provider !== undefined) run.usedProvider = event.provider;
   } else if (event.type === 'error') {
     const error = event.error || 'Unknown error';
     run.status = 'error';

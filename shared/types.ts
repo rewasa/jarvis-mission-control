@@ -113,6 +113,8 @@ export interface TaskRunState {
   startedAt: number;
   updatedAt: number;
   goal?: GoalStateSnapshot | null;
+  usedModel?: string | null;
+  usedProvider?: string | null;
 }
 
 export type BoardEvent =
@@ -121,7 +123,8 @@ export type BoardEvent =
   | { type: 'task_deleted'; taskId: string }
   | { type: 'subtasks_synced'; parentTaskId: string; subtasks: Task[]; imported: number; updated: number }
   | { type: 'task_runs_snapshot'; runs: TaskRunState[] }
-  | { type: 'task_run_updated'; run: TaskRunState };
+  | { type: 'task_run_updated'; run: TaskRunState }
+  | { type: 'agent_settings_updated'; taskId?: string; defaults?: AgentDefaults };
 
 export type LiveChatMessage = TaskMessage & { tools?: ToolProgressEvent[] };
 
