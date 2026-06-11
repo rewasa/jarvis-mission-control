@@ -259,7 +259,7 @@ export function Board() {
     >
       <div className="flex flex-1 min-h-0 flex-col">
         <RecurringSummaryStrip scheduledTasks={scheduledTasks} />
-        <div className="mx-3 mt-3 sm:mx-6 sm:mt-4">
+        <div className="mx-5 mt-3 sm:mx-6 sm:mt-4">
           <label className="relative mx-auto flex min-w-0 items-center sm:max-w-md">
             <Search size={15} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-zinc-400" />
             <input

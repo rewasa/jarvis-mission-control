@@ -32,7 +32,10 @@ const compactMarkdownClassName = [
   '[&_h3]:mt-2.5 [&_h3]:mb-1 [&_h3]:text-sm',
   '[&_p]:mb-2 [&_p:last-child]:mb-0',
   '[&_ul]:mb-2 [&_ul:last-child]:mb-0 [&_ol]:mb-2 [&_ol:last-child]:mb-0',
-  '[&_blockquote]:my-2',
+  // Blockquotes carry the agent's interstitial work narration (emitted by the
+  // Claude-CLI adapter) — render them dimmed and compact so they read as a
+  // work journal, visually separate from the actual answer.
+  '[&_blockquote]:my-2 [&_blockquote]:border-l-2 [&_blockquote]:border-zinc-300 dark:[&_blockquote]:border-zinc-600 [&_blockquote]:pl-3 [&_blockquote]:text-xs [&_blockquote]:text-zinc-500 dark:[&_blockquote]:text-zinc-400 [&_blockquote]:not-italic',
   '[&_pre]:max-w-full [&_pre]:overflow-x-auto [&_pre]:text-[13px] [&_code]:text-[13px]',
   '[&>*:first-child]:mt-0 [&>*:last-child]:mb-0',
 ].join(' ');

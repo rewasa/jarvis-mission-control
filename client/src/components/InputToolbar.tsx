@@ -1,6 +1,6 @@
 import { Fragment, useCallback, useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import { Check, ChevronDown, Loader2, Search, Sparkles, Target, Zap, type LucideIcon } from 'lucide-react';
+import { Check, ChevronDown, Loader2, Search, Sparkles, Target, Zap, Plug, Cpu, type LucideIcon } from 'lucide-react';
 import { MINIONS_GOAL_MAX_TURNS, REASONING_EFFORTS, type AgentDefaults, type AgentModelGroup, type ChatRunMode, type ContextUsage, type ReasoningEffort } from '@shared/types';
 import { formatTokenCount } from '../lib/format';
 import { GOAL_MODE_SHORTCUT_LABEL } from '../lib/keyboard';
@@ -1072,6 +1072,9 @@ export function InputToolbar({
     );
   }
 
+  const activeProvider = model ? provider : defaultProvider;
+  const isAdapter = activeProvider === 'anthropic' || (activeProvider === null && (defaults?.baseUrl?.includes('8082') || defaults?.baseUrl?.includes('127.0.0.1:8082')));
+
   return (
     <div className={`flex min-w-0 items-center gap-2 ${compactMobile ? 'flex-nowrap' : 'flex-wrap'}`}>
       <ModelPicker
@@ -1085,6 +1088,13 @@ export function InputToolbar({
         compactMobile={compactMobile}
         onChange={(nextModel, selection) => onModelChange(nextModel || null, selection?.provider ?? null)}
       />
+
+      {isAdapter && (
+        <div className="inline-flex h-7 items-center gap-1.5 rounded-md border border-emerald-200 bg-emerald-50/70 px-2 text-[10px] font-semibold text-emerald-800 dark:border-emerald-950/40 dark:bg-emerald-950/20 dark:text-emerald-200 shadow-sm transition-all duration-300">
+          <Plug size={10} className="shrink-0 text-emerald-600 dark:text-emerald-400 animate-pulse" />
+          <span>Claude Code (Subscription)</span>
+        </div>
+      )}
 
       <ToolbarSelect
         icon={Zap}

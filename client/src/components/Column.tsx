@@ -62,7 +62,7 @@ export function Column({
         isLast ? 'pr-0' : 'border-r border-zinc-200 pr-4 sm:pr-6 dark:border-zinc-800'
       }`}
     >
-      <div className="flex items-center gap-2 mb-3 pl-1">
+      <div className="flex items-center gap-2 mb-3 pl-4">
         <StatusIcon status={status} />
         <h2 className="text-xs font-medium tracking-wider text-zinc-500 dark:text-zinc-400 uppercase">{label}</h2>
         <span className="text-xs text-zinc-400 dark:text-zinc-500">{tasks.length}</span>

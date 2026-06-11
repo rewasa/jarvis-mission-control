@@ -10,6 +10,7 @@
 import { execFileSync } from 'node:child_process';
 import Database from 'better-sqlite3';
 import { existsSync } from 'node:fs';
+import { homedir } from 'node:os';
 import { basename, dirname, join } from 'node:path';
 import { resolveHermesHome } from '../paths.js';
 import {
@@ -152,15 +153,68 @@ function mapTaskRow(row: KanbanTaskRow | undefined): KanbanTaskInfo | null {
   };
 }
 
+let cachedHermesBin: string | null = null;
+
+/**
+ * Resolve an absolute path to the `hermes` CLI binary.
+ *
+ * Under PM2/launchd, the inherited PATH usually omits `~/.local/bin`, so a bare
+ * `execFileSync('hermes', …)` fails with `spawnSync hermes ENOENT`. We resolve
+ * the real binary explicitly: env override → venv path → `~/.local/bin` symlink
+ * → PATH lookup via `which` → bare name (last-resort, will surface ENOENT).
+ */
+function resolveHermesBin(): string {
+  if (cachedHermesBin) return cachedHermesBin;
+
+  const override = process.env.HERMES_BIN?.trim();
+  if (override) {
+    cachedHermesBin = override.startsWith('~/')
+      ? join(homedir(), override.slice(2))
+      : override;
+    return cachedHermesBin;
+  }
+
+  const candidates = [
+    join(resolveHermesHome(), 'hermes-agent/venv/bin/hermes'),
+    join(homedir(), '.local/bin/hermes'),
+  ];
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (found) {
+    cachedHermesBin = found;
+    return found;
+  }
+
+  try {
+    const viaPath = execFileSync('which', ['hermes'], { encoding: 'utf-8' }).trim();
+    if (viaPath) {
+      cachedHermesBin = viaPath;
+      return viaPath;
+    }
+  } catch {
+    // `which` failed (hermes not on PATH) — fall through to bare name.
+  }
+
+  cachedHermesBin = 'hermes';
+  return cachedHermesBin;
+}
+
 function runKanbanCli(args: string[]): string {
+  const bin = resolveHermesBin();
+  // Ensure the binary's own directory and ~/.local/bin are on PATH so any
+  // sub-processes hermes itself spawns (e.g. python venv) resolve correctly.
+  const extraPaths = [dirname(bin), join(homedir(), '.local/bin')];
+  const currentPath = process.env.PATH ?? '';
+  const mergedPath = [...extraPaths, currentPath].filter(Boolean).join(':');
+
   return execFileSync(
-    'hermes',
+    bin,
     ['kanban', '--board', KANBAN_BOARD, ...args],
     {
       encoding: 'utf-8',
       timeout: 30_000,
       env: {
         ...process.env,
+        PATH: mergedPath,
         HERMES_KANBAN_HOME: resolveKanbanRoot(),
       },
     },

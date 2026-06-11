@@ -93,7 +93,7 @@ export function Sidebar() {
       </div>
 
       <div
-        className={`flex h-[3.75rem] items-center justify-around gap-1 px-2 sm:flex-1 sm:flex-col sm:items-stretch sm:justify-start sm:gap-0 sm:h-auto ${
+        className={`flex h-[3.75rem] items-center justify-around gap-1 px-4 sm:flex-1 sm:flex-col sm:items-stretch sm:justify-start sm:gap-0 sm:h-auto sm:px-0 ${
           desktopCollapsed ? 'sm:px-2' : 'sm:px-3'
         }`}
       >

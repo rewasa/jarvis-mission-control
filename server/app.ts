@@ -11,6 +11,7 @@ import { githubStatusRouter } from './routes/github-status.js';
 import { githubWebhookRouter } from './routes/github-webhook.js';
 import { integrationsRouter } from './routes/integrations.js';
 import { kanbanBoardsRouter } from './routes/kanban.js';
+import claudeRouter from './routes/claude-sessions.js';
 import { HermesWorkerAdapter } from './adapters/hermes-worker.js';
 import { initSSE, addClient, sendEvent } from './events.js';
 import { getRunStatuses } from './live-chat.js';
@@ -25,13 +26,21 @@ const adapter = new HermesWorkerAdapter();
 app.get('/api/health', async (_req, res) => {
   const hermes = await adapter.healthCheck();
   let claudeAdapter = false;
+  let claudeAdapterVersion = '';
   try {
     const response = await fetch('http://127.0.0.1:8082/health');
     claudeAdapter = response.ok;
+    if (response.ok) {
+      try {
+        const vRes = await fetch('http://127.0.0.1:8082/version');
+        const vData = await vRes.json();
+        claudeAdapterVersion = vData.adapter || '';
+      } catch { /* ignore */ }
+    }
   } catch {
     // Adapter not running — report as false
   }
-  res.json({ ok: true, hermes, claudeAdapter });
+  res.json({ ok: true, hermes, claudeAdapter, claudeAdapterVersion });
 });
 
 app.get('/api/auth/status', async (_req, res) => {
@@ -82,6 +91,7 @@ app.use('/api/tasks', githubStatusRouter);
 app.use('/api/github', githubWebhookRouter);
 app.use('/api/integrations', integrationsRouter);
 app.use('/api/kanban', kanbanBoardsRouter);
+app.use('/api/claude', claudeRouter);
 
 app.use((error: unknown, _req: Request, res: Response, next: NextFunction) => {
   if (!res.headersSent && error && typeof error === 'object' && (error as { type?: string }).type === 'entity.too.large') {

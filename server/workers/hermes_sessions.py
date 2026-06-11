@@ -236,6 +236,49 @@ def _strip_agentcontrol_user_scaffold(content: str) -> str:
     return content
 
 
+def _dim_leading_narration(content: str) -> str:
+    """Convert leading interstitial work-narration lines into blockquotes.
+
+    Historic assistant messages persisted before the adapter started marking
+    narration contain a stack of short "Jetzt baue ich X:" lines glued to the
+    top of the final answer. Render them as a dimmed work journal (blockquote)
+    instead of pretending they are part of the answer.
+
+    Conservative: only leading lines that end with ":", are short, are not
+    markdown headings/list items/quotes, and are not the only content.
+    """
+    if "[[HF_TOOL_" in content:
+        # Marker-bearing messages already get native tool-pill rendering in
+        # the UI; their interstitial text reads naturally between pills.
+        return content
+
+    lines = content.split("\n")
+    narration_count = 0
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            break
+        if (
+            stripped.endswith(":")
+            and len(stripped) <= 120
+            and not stripped.startswith(("#", "-", "*", ">", "`", "|", "1."))
+        ):
+            narration_count += 1
+            continue
+        break
+
+    if narration_count == 0 or narration_count >= len(lines):
+        return content
+
+    # Remainder must still hold real content, otherwise leave untouched.
+    remainder = "\n".join(lines[narration_count:]).strip()
+    if not remainder:
+        return content
+
+    quoted = [f"> {lines[i].strip()}" for i in range(narration_count)]
+    return "\n".join(quoted) + "\n\n" + "\n".join(lines[narration_count:]).lstrip("\n")
+
+
 def _is_compaction_reference(content: str) -> bool:
     stripped = content.lstrip()
     return (
@@ -317,6 +360,8 @@ def project_session_messages(session_id: Any, task_id: Any = None) -> dict[str, 
                 continue
             if not content.strip():
                 continue
+            if role == "assistant":
+                content = _dim_leading_narration(content)
 
             message = {
                 "id": f"hermes:{lineage_session_id}:{row.get('id')}",
