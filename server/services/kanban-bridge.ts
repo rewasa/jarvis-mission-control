@@ -150,6 +150,7 @@ function mapTaskRow(row: KanbanTaskRow | undefined): KanbanTaskInfo | null {
     latest_run_status: null,
     latest_run_profile: null,
     latest_run_metadata: metadata,
+    branch_name: row.branch_name,
   };
 }
 
@@ -288,6 +289,9 @@ export function ensureKanbanRootTaskForAgentControlTask(
 
   const updated = updateTask(task.id, {
     hermes_kanban_task_id: kanbanId,
+    // createKanbanTask always creates on the jarvis board (runKanbanCli is
+    // pinned to --board KANBAN_BOARD), so record that as the authoritative board.
+    hermes_kanban_board: KANBAN_BOARD,
     delegation_profile: assignee,
     assignee,
     external_source: 'agentcontrol-kanban-root',
@@ -468,10 +472,26 @@ export function findBoardForKanbanTask(kanbanId: string | null): string | null {
   return null;
 }
 
-export function getKanbanTaskInfo(kanbanId: string | null): KanbanTaskInfo | null {
+/**
+ * Resolve which board owns a kanban task, preferring an authoritative hint
+ * (the AgentControl `hermes_kanban_board`) when it actually contains the task.
+ * Falls back to the jarvis-first scan, then the hardcoded default board. The
+ * hint is what stops a delegation on a non-jarvis board from being shadowed.
+ */
+function resolveKanbanBoard(kanbanId: string, boardHint?: string | null): string {
+  if (boardHint && boardContainsKanbanTask(boardHint, kanbanId)) return boardHint;
+  return findBoardForKanbanTask(kanbanId) ?? KANBAN_BOARD;
+}
+
+export function getKanbanTaskInfo(
+  kanbanId: string | null,
+  boardHint?: string | null,
+): KanbanTaskInfo | null {
   if (!kanbanId) return null;
 
-  const board = findBoardForKanbanTask(kanbanId) ?? KANBAN_BOARD;
+  // Prefer the authoritative board passed by the caller (stored on the
+  // AgentControl task). Only fall back to the jarvis-first scan when unknown.
+  const board = resolveKanbanBoard(kanbanId, boardHint);
   const conn = openKanbanDbForBoard(board);
   if (!conn) return null;
 
@@ -522,40 +542,55 @@ export function getKanbanTaskInfo(kanbanId: string | null): KanbanTaskInfo | nul
       latest_run_status: row.latest_run_status,
       latest_run_profile: row.latest_run_profile,
       latest_run_metadata: parseJsonRecord(row.latest_run_metadata),
+      branch_name: row.branch_name,
     };
   } finally {
     conn.close();
   }
 }
 
-export function getKanbanChildren(parentKanbanId: string): KanbanTaskInfo[] {
-  const conn = openKanbanDb();
+/**
+ * Resolve the child kanban-task ids linked to a parent. `task_links` rows live
+ * on the PARENT's board, so we read them from the parent's board rather than
+ * the hardcoded jarvis board. `parentBoard` (when known, e.g. from the stored
+ * AgentControl `hermes_kanban_board`) avoids the board scan.
+ */
+export function getKanbanChildIds(
+  parentKanbanId: string,
+  parentBoard?: string | null,
+): string[] {
+  const board = resolveKanbanBoard(parentKanbanId, parentBoard);
+  const conn = openKanbanDbForBoard(board);
   if (!conn) return [];
 
   try {
-    const rows = conn.prepare(`
-      SELECT t.*
-      FROM tasks t
-      INNER JOIN task_links l ON l.child_id = t.id
-      WHERE l.parent_id = ?
-      ORDER BY t.created_at ASC
-    `).all(parentKanbanId) as KanbanTaskRow[];
-    return rows.map(mapTaskRow).filter((task): task is KanbanTaskInfo => task !== null);
+    const rows = conn.prepare(
+      'SELECT child_id FROM task_links WHERE parent_id = ? ORDER BY rowid ASC',
+    ).all(parentKanbanId) as { child_id: string }[];
+    return rows.map(row => row.child_id);
   } finally {
     conn.close();
   }
 }
 
-export function getKanbanChildIds(parentKanbanId: string): string[] {
-  const conn = openKanbanDb();
-  if (!conn) return [];
-
-  try {
-    const rows = conn.prepare('SELECT child_id FROM task_links WHERE parent_id = ?').all(parentKanbanId) as { child_id: string }[];
-    return rows.map(row => row.child_id);
-  } finally {
-    conn.close();
+/**
+ * Return full info for each linked child. Children may live on a DIFFERENT
+ * board than the parent (e.g. work delegated to a fresh per-feature board), so
+ * each child is resolved via its own board rather than assumed to share the
+ * parent's. Ordered by creation time for a stable UI order.
+ */
+export function getKanbanChildren(
+  parentKanbanId: string,
+  parentBoard?: string | null,
+): KanbanTaskInfo[] {
+  const childIds = getKanbanChildIds(parentKanbanId, parentBoard);
+  const children: KanbanTaskInfo[] = [];
+  for (const childId of childIds) {
+    const info = getKanbanTaskInfo(childId);
+    if (info) children.push(info);
   }
+  children.sort((a, b) => (a.created_at ?? 0) - (b.created_at ?? 0));
+  return children;
 }
 
 export function findKanbanTaskByAgentControlTaskId(acTaskId: string): KanbanTaskInfo | null {
@@ -585,10 +620,14 @@ export function findKanbanTaskByAgentControlTaskId(acTaskId: string): KanbanTask
   }
 }
 
-export function getKanbanLogs(kanbanId: string | null, limit = 50): KanbanLogEntry[] {
+export function getKanbanLogs(
+  kanbanId: string | null,
+  limit = 50,
+  boardHint?: string | null,
+): KanbanLogEntry[] {
   if (!kanbanId) return [];
 
-  const board = findBoardForKanbanTask(kanbanId) ?? KANBAN_BOARD;
+  const board = resolveKanbanBoard(kanbanId, boardHint);
   const conn = openKanbanDbForBoard(board);
   if (!conn) return [];
 
@@ -624,10 +663,14 @@ export function getKanbanLogs(kanbanId: string | null, limit = 50): KanbanLogEnt
   }
 }
 
-export function getKanbanRuns(kanbanId: string | null, limit = 20): KanbanRunEntry[] {
+export function getKanbanRuns(
+  kanbanId: string | null,
+  limit = 20,
+  boardHint?: string | null,
+): KanbanRunEntry[] {
   if (!kanbanId) return [];
 
-  const board = findBoardForKanbanTask(kanbanId) ?? KANBAN_BOARD;
+  const board = resolveKanbanBoard(kanbanId, boardHint);
   const conn = openKanbanDbForBoard(board);
   if (!conn) return [];
 
@@ -678,10 +721,14 @@ export function getKanbanRuns(kanbanId: string | null, limit = 20): KanbanRunEnt
   }
 }
 
-export function getKanbanComments(kanbanId: string | null, limit = 20): KanbanCommentEntry[] {
+export function getKanbanComments(
+  kanbanId: string | null,
+  limit = 20,
+  boardHint?: string | null,
+): KanbanCommentEntry[] {
   if (!kanbanId) return [];
 
-  const board = findBoardForKanbanTask(kanbanId) ?? KANBAN_BOARD;
+  const board = resolveKanbanBoard(kanbanId, boardHint);
   const conn = openKanbanDbForBoard(board);
   if (!conn) return [];
 
@@ -821,7 +868,10 @@ export async function syncKanbanChildrenForTask(
     throw new Error('Parent task lost hermes_kanban_task_id mapping during refresh');
   }
 
-  const linkedChildren = getKanbanChildren(parentKanbanId);
+  const parentBoard = parentTask.hermes_kanban_board
+    ?? findBoardForKanbanTask(parentKanbanId)
+    ?? KANBAN_BOARD;
+  const linkedChildren = getKanbanChildren(parentKanbanId, parentBoard);
   const linkedIds = new Set(linkedChildren.map((child) => child.kanban_id));
   const childrenById = new Map(linkedChildren.map((child) => [child.kanban_id, child]));
   for (const childId of options?.extraChildIds ?? []) {
@@ -838,12 +888,17 @@ export async function syncKanbanChildrenForTask(
     const existing = getTaskByKanbanId(child.kanban_id);
     const mapped = mapKanbanStatus(child.status);
     const profile = extractProfileFromKanban(child);
+    // Persist the child's authoritative board so its logs/transcript resolve
+    // directly instead of relying on the jarvis-first scan. Children linked
+    // from the parent's board may physically live on a different board.
+    const childBoard = findBoardForKanbanTask(child.kanban_id) ?? parentBoard;
 
     const taskUpdates: Partial<Pick<Task,
       | 'status'
       | 'delegation_status'
       | 'delegation_profile'
       | 'assignee'
+      | 'hermes_kanban_board'
       | 'github_pr_url'
       | 'github_pr_number'
       | 'github_pr_state'
@@ -857,6 +912,7 @@ export async function syncKanbanChildrenForTask(
       delegation_status: mapped.delegation_status,
       delegation_profile: profile,
       assignee: profile,
+      hermes_kanban_board: childBoard,
     };
     if (parentTask.github_pr_url) {
       taskUpdates.github_pr_url = parentTask.github_pr_url;
@@ -915,6 +971,7 @@ export async function syncKanbanChildrenForTask(
       assignee: profile ?? undefined,
       priority: null,
       hermes_kanban_task_id: child.kanban_id,
+      hermes_kanban_board: childBoard,
       delegation_profile: profile,
       external_source: linkedIds.has(child.kanban_id) ? 'hermes-kanban-sync' : 'hermes-kanban-chat-reference',
       github_pr_url: taskUpdates.github_pr_url,
@@ -1069,6 +1126,7 @@ export function getBoardTasks(board: string): KanbanTaskInfo[] {
       latest_run_status: row.latest_run_status,
       latest_run_profile: row.latest_run_profile,
       latest_run_metadata: parseJsonRecord(row.latest_run_metadata),
+      branch_name: row.branch_name,
     }));
   } finally { conn.close(); }
 }
@@ -1111,6 +1169,7 @@ export function getBoardTaskInfo(board: string, kanbanId: string): KanbanTaskInf
       latest_run_status: row.latest_run_status,
       latest_run_profile: row.latest_run_profile,
       latest_run_metadata: parseJsonRecord(row.latest_run_metadata),
+      branch_name: row.branch_name,
     };
   } finally { conn.close(); }
 }

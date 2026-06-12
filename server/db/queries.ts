@@ -27,7 +27,7 @@ const stmtInsertTask = db.prepare(`
     created_at, updated_at, last_agent_response_at, last_viewed_at,
     last_context_used_tokens, last_context_window_tokens,
     parent_task_id, priority, labels_json, assignee, delegation_status,
-    hermes_kanban_task_id, delegation_profile, external_source,
+    hermes_kanban_task_id, hermes_kanban_board, delegation_profile, external_source,
     github_pr_url, github_pr_number, github_pr_state, github_pr_head_ref, github_pr_head_sha,
     github_checks_status, github_checks_summary, github_checks_updated_at
   )
@@ -36,7 +36,7 @@ const stmtInsertTask = db.prepare(`
     @created_at, @updated_at, @last_agent_response_at, @last_viewed_at,
     @last_context_used_tokens, @last_context_window_tokens,
     @parent_task_id, @priority, @labels_json, @assignee, @delegation_status,
-    @hermes_kanban_task_id, @delegation_profile, @external_source,
+    @hermes_kanban_task_id, @hermes_kanban_board, @delegation_profile, @external_source,
     @github_pr_url, @github_pr_number, @github_pr_state, @github_pr_head_ref, @github_pr_head_sha,
     @github_checks_status, @github_checks_summary, @github_checks_updated_at
   )
@@ -80,6 +80,7 @@ export function insertTask(task: {
   assignee?: string | null;
   delegation_status?: string | null;
   hermes_kanban_task_id?: string | null;
+  hermes_kanban_board?: string | null;
   delegation_profile?: string | null;
   external_source?: string | null;
   github_pr_url?: string | null;
@@ -113,6 +114,7 @@ export function insertTask(task: {
     assignee: task.assignee ?? null,
     delegation_status: task.delegation_status ?? null,
     hermes_kanban_task_id: task.hermes_kanban_task_id ?? null,
+    hermes_kanban_board: task.hermes_kanban_board ?? null,
     delegation_profile: task.delegation_profile ?? null,
     external_source: task.external_source ?? null,
     github_pr_url: task.github_pr_url ?? null,
@@ -144,6 +146,7 @@ const ALLOWED_UPDATE_FIELDS = new Set<string>([
   'assignee',
   'delegation_status',
   'hermes_kanban_task_id',
+  'hermes_kanban_board',
   'delegation_profile',
   'external_source',
   'github_pr_url',
@@ -174,6 +177,7 @@ type TaskUpdateFields = Pick<
   | 'assignee'
   | 'delegation_status'
   | 'hermes_kanban_task_id'
+  | 'hermes_kanban_board'
   | 'delegation_profile'
   | 'external_source'
   | 'github_pr_url'

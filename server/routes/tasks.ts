@@ -4,7 +4,7 @@ import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewe
 import { broadcast } from '../events.js';
 import { adapter } from '../app.js';
 import { startTaskChatRun, seedTaskThreadFromDescription } from './chat.js';
-import { createKanbanTask, ensureKanbanRootTaskForAgentControlTask, extractKanbanTaskIdsFromText, findBoardForKanbanTask, getBoardTaskTranscriptPath, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, syncKanbanChildrenForTask, syncTaskStatusFromKanban, updateKanbanTaskStatusFromAgentControl } from '../services/kanban-bridge.js';
+import { createKanbanTask, ensureKanbanRootTaskForAgentControlTask, extractKanbanTaskIdsFromText, findBoardForKanbanTask, getBoardTaskTranscriptPath, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, KANBAN_BOARD, syncKanbanChildrenForTask, syncTaskStatusFromKanban, updateKanbanTaskStatusFromAgentControl } from '../services/kanban-bridge.js';
 import { refreshTaskGitHubStatus, extractGitHubPrRefs } from '../services/github-status.js';
 import { mergeLinkedPullRequestForTask } from '../services/github-merge.js';
 import type { TaskMessage } from '../../shared/types.js';
@@ -346,6 +346,8 @@ tasksRouter.post('/:id/subtasks', async (req, res) => {
       // Persist the mapping in AgentControl DB
       const updatedWithKanban = updateTask(subtask.id, {
         hermes_kanban_task_id: kanbanId,
+        // Subtasks are created via runKanbanCli (pinned to the jarvis board).
+        hermes_kanban_board: KANBAN_BOARD,
         delegation_profile: kanbanAssignProfile,
         github_pr_url: resolvedSubtaskPrUrl,
         github_pr_number: explicitSubtaskPrUrl ? extractGitHubPrRefs(explicitSubtaskPrUrl)[0]?.number : parentTask.github_pr_number,
@@ -456,9 +458,10 @@ tasksRouter.get('/:id/kanban/logs', (req, res) => {
   if (!task.hermes_kanban_task_id) return res.status(404).json({ error: 'Task has no kanban mapping' });
 
   const limit = parseLimit(req.query.limit, 50);
-  const runs = getKanbanRuns(task.hermes_kanban_task_id, limit);
-  const logs = getKanbanLogs(task.hermes_kanban_task_id, limit);
-  const comments = getKanbanComments(task.hermes_kanban_task_id, limit);
+  const board = task.hermes_kanban_board;
+  const runs = getKanbanRuns(task.hermes_kanban_task_id, limit, board);
+  const logs = getKanbanLogs(task.hermes_kanban_task_id, limit, board);
+  const comments = getKanbanComments(task.hermes_kanban_task_id, limit, board);
   const synced = syncTaskStatusFromKanban(task).task;
   res.json({
     kanban_id: synced.hermes_kanban_task_id,
@@ -475,7 +478,7 @@ tasksRouter.get('/:id/kanban/transcript', (req, res) => {
   if (!task) return res.status(404).type('text/plain').send('Task not found');
   if (!task.hermes_kanban_task_id) return res.status(404).type('text/plain').send('Task has no kanban mapping');
 
-  const board = findBoardForKanbanTask(task.hermes_kanban_task_id);
+  const board = task.hermes_kanban_board ?? findBoardForKanbanTask(task.hermes_kanban_task_id);
   if (!board) return res.status(404).type('text/plain').send('Kanban task not found');
 
   const path = getBoardTaskTranscriptPath(board, task.hermes_kanban_task_id);

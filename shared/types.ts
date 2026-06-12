@@ -59,6 +59,14 @@ export interface Task {
   delegation_status: DelegationStatus | null;
   /** Hermes Kanban task id for delegated subtasks. */
   hermes_kanban_task_id: string | null;
+  /**
+   * Authoritative Hermes Kanban board slug that owns `hermes_kanban_task_id`.
+   * Delegations to a non-default board (e.g. a fresh per-feature board) store
+   * the real board here so logs/transcript/children resolve without the
+   * jarvis-first board scan that silently shadows other boards. Nullable;
+   * absence falls back to a best-effort scan.
+   */
+  hermes_kanban_board: string | null;
   /** Delegation profile name (Hermes profile). */
   delegation_profile: string | null;
   /** Source marker: 'agentcontrol' or 'hermes-kanban-sync' (nullable). */
@@ -263,6 +271,8 @@ export interface KanbanTaskInfo {
   latest_run_profile: string | null;
   /** Latest Kanban run metadata JSON, if any. */
   latest_run_metadata: Record<string, unknown>;
+  /** Git branch the Kanban worker was assigned (e.g. kanban/<slug>). */
+  branch_name: string | null;
 }
 
 export interface KanbanLogEntry {
