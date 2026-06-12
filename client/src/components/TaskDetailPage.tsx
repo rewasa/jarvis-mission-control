@@ -204,7 +204,7 @@ function KanbanPanel({
   );
 }
 
-function TranscriptLog({ taskId, hasKanban, refreshKey, compact = false }: { taskId: string; hasKanban: boolean; refreshKey: number; compact?: boolean }) {
+function TranscriptLog({ taskId, hasKanban, refreshKey, compact = false, label }: { taskId: string; hasKanban: boolean; refreshKey: number; compact?: boolean; label?: string }) {
   const [content, setContent] = useState('');
   const [error, setError] = useState<string | null>(null);
   const scrollerRef = useRef<HTMLPreElement>(null);
@@ -258,7 +258,7 @@ function TranscriptLog({ taskId, hasKanban, refreshKey, compact = false }: { tas
           <FileText size={12} strokeWidth={2.5} />
           Worker Transcript
         </span>
-        <span className="text-xs text-zinc-400">live log from Hermes worker</span>
+        <span className="min-w-0 flex-1 truncate text-xs text-zinc-400">{label ? label : 'live log from Hermes worker'}</span>
       </div>
       <pre
         ref={scrollerRef}
@@ -750,6 +750,21 @@ function ExecutionRailContent({
   const hasKanban = Boolean(kanbanInfo?.kanban_id ?? task.hermes_kanban_task_id);
   const hasSubtaskSidebar = !task.parent_task_id && subtasks.length > 0;
   const showWorkerTranscript = hasKanban && !hasSubtaskSidebar;
+  // On a parent task the rail shows the subtask list instead of a transcript.
+  // Surface the worker transcript of the most relevant kanban-backed subtask
+  // (active first, then most recently updated) so subtask logs stay visible
+  // without drilling into each child.
+  const focusSubtask = hasSubtaskSidebar
+    ? subtasks
+        .filter(isKanbanSubtask)
+        .slice()
+        .sort((a, b) => {
+          const aActive = a.status === 'in_progress' ? 1 : 0;
+          const bActive = b.status === 'in_progress' ? 1 : 0;
+          if (aActive !== bActive) return bActive - aActive;
+          return (b.updated_at ?? 0) - (a.updated_at ?? 0);
+        })[0] ?? null
+    : null;
 
   return (
     <div className={`flex min-h-0 flex-col gap-2 ${className}`}>
@@ -775,6 +790,15 @@ function ExecutionRailContent({
         onLink={onGitHubLink}
         compact
       />
+      {focusSubtask && (
+        <TranscriptLog
+          taskId={focusSubtask.id}
+          hasKanban
+          refreshKey={kanbanRefreshKey}
+          label={focusSubtask.title}
+          compact
+        />
+      )}
       {hasSubtaskSidebar && (
         <SubtasksSidebar
           subtasks={subtasks}
