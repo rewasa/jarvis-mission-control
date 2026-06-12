@@ -249,6 +249,33 @@ function settleRun(taskId: string, runId: string, context: ContextUsage | null):
   finishRun(taskId, ttl, runId);
 }
 
+/**
+ * Seed a task's chat thread with an initial briefing message derived from its
+ * description, WITHOUT starting an agent run. Used for subtasks created without
+ * immediate delegation (and other imported tasks) so the detail view shows the
+ * real briefing from the start instead of the empty "Start a conversation"
+ * placeholder.
+ *
+ * Best-effort: never throws. No-op if the task has no description or the thread
+ * already has at least one message.
+ */
+export async function seedTaskThreadFromDescription(task: Task): Promise<boolean> {
+  const description = task.description?.trim();
+  if (!description) return false;
+  try {
+    const existing = await adapter.getMessages(task.id, task.id);
+    if (existing.length > 0) return false;
+    await adapter.appendMessage(task.id, 'user', description);
+    return true;
+  } catch (error) {
+    console.error(
+      `[chat] Failed to seed task thread for ${task.id}:`,
+      error instanceof Error ? error.message : error,
+    );
+    return false;
+  }
+}
+
 export function startTaskChatRun(runTask: Task, content: string): { runId: string } {
   const activeRun = getRunStatus(runTask.id);
   if (isTaskRunActive(activeRun)) {

@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs';
 import { getAllTasks, getTask, insertTask, updateTask, deleteTask, markTaskViewed, getSubtasks, getSubtaskCount } from '../db/queries.js';
 import { broadcast } from '../events.js';
 import { adapter } from '../app.js';
-import { startTaskChatRun } from './chat.js';
+import { startTaskChatRun, seedTaskThreadFromDescription } from './chat.js';
 import { createKanbanTask, ensureKanbanRootTaskForAgentControlTask, extractKanbanTaskIdsFromText, findBoardForKanbanTask, getBoardTaskTranscriptPath, getKanbanComments, getKanbanTaskInfo, getKanbanLogs, getKanbanRuns, syncKanbanChildrenForTask, syncTaskStatusFromKanban, updateKanbanTaskStatusFromAgentControl } from '../services/kanban-bridge.js';
 import { refreshTaskGitHubStatus, extractGitHubPrRefs } from '../services/github-status.js';
 import { mergeLinkedPullRequestForTask } from '../services/github-merge.js';
@@ -262,7 +262,7 @@ tasksRouter.get('/:id/subtasks', async (req, res) => {
   res.json({ parent, subtasks });
 });
 
-tasksRouter.post('/:id/subtasks', (req, res) => {
+tasksRouter.post('/:id/subtasks', async (req, res) => {
   const parent = getTask(req.params.id);
   if (!parent) return res.status(404).json({ error: 'Task not found' });
 
@@ -377,6 +377,11 @@ tasksRouter.post('/:id/subtasks', (req, res) => {
       }
       return res.status(409).json({ error: error instanceof Error ? error.message : 'Could not start delegated subtask' });
     }
+  } else {
+    // Non-delegated subtasks get no agent run, so seed the thread with the
+    // description as a real start message — otherwise the detail view shows an
+    // empty "Start a conversation" placeholder despite having a description.
+    if (subtask) await seedTaskThreadFromDescription(subtask);
   }
 
   // Refresh parent broadcast with updated subtask count
