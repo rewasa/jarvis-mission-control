@@ -1051,9 +1051,22 @@ def _agent_failure_message(text: str) -> str | None:
         "API call failed after",
         "Rate limited after",
         "Non-retryable client error",
+        "API Error:",
+        "Claude Code is unable",
     )
     if clean.startswith(failure_prefixes):
         return clean
+
+    # Also catch failure messages that appear mid-stream (e.g. AUP errors
+    # that Hermes streams as text before the run ends).
+    failure_markers = (
+        "API Error: Claude Code is unable to respond",
+        "appears to violate our Usage Policy",
+        "reverse engineering or duplicating model outputs",
+    )
+    for marker in failure_markers:
+        if marker in clean:
+            return clean
 
     return None
 
@@ -1240,13 +1253,28 @@ def _run_chat(request_id: str, request: dict[str, Any]) -> None:
 
     delegated_task_id = string_or_none(request.get("delegatedTaskId"))
 
-    state = {"text": "", "thinking": ""}
+    state = {"text": "", "thinking": "", "failure_detected": False}
 
     def on_text_delta(text: Any) -> None:
+        nonlocal state
         if text is None:
             return
         chunk = str(text)
         state["text"] += chunk
+
+        # Detect provider failure messages mid-stream (AUP, API errors)
+        # and suppress them from the chat history. Hermes streams these
+        # as normal text before the run ends, so the post-run check in
+        # _agent_failure_message is too late.
+        if not state["failure_detected"] and _agent_failure_message(state["text"]):
+            state["failure_detected"] = True
+            # Don't send this chunk — it's part of a failure message.
+            return
+
+        if state["failure_detected"]:
+            # Already detected a failure — suppress all further text.
+            return
+
         _send({"id": request_id, "type": "text_delta", "content": chunk})
 
     def on_reasoning_delta(text: Any) -> None:
