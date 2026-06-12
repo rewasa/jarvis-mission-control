@@ -621,6 +621,7 @@ function useSyncedQueue(taskId: string): [QueuedMessage[], React.Dispatch<React.
 export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatProps) {
   const { messages, isStreaming: liveIsStreaming, stopped: runStopped, thinkingContent, activeTools, context, sendMessage, loadMessages } = useChat();
   const taskRun = useStore((s) => s.taskRuns.get(taskId));
+  const taskDescription = useStore((s) => s.tasks.find((t) => t.id === taskId)?.description ?? '');
   const [input, setInput] = useSyncedDraft(taskId);
   const [runMode, setRunMode] = useState<ChatRunMode>(initialSettings?.mode ?? 'task');
   const [loadedTaskId, setLoadedTaskId] = useState<string | null>(null);
@@ -1065,7 +1066,18 @@ export function TaskChat({ taskId, initialMessage, initialSettings }: TaskChatPr
             ) : messageLoadError ? (
               <p className={PLACEHOLDER_CLASS}>Unable to load conversation.</p>
             ) : messages.length === 0 ? (
-              <p className={PLACEHOLDER_CLASS}>Start a conversation with your assistant.</p>
+              taskDescription.trim() ? (
+                <div className="rounded-2xl border border-zinc-200 bg-zinc-50/60 px-4 py-3 dark:border-zinc-800 dark:bg-zinc-900/40">
+                  <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-zinc-400 dark:text-zinc-500">
+                    Task details
+                  </p>
+                  <div className="min-w-0 max-w-full overflow-hidden text-sm leading-relaxed text-zinc-700 dark:text-zinc-300">
+                    <MarkdownContent content={taskDescription.trim()} />
+                  </div>
+                </div>
+              ) : (
+                <p className={PLACEHOLDER_CLASS}>Start a conversation with your assistant.</p>
+              )
             ) : null}
             {hiddenCount > 0 && (
               <div className="flex justify-center py-2">

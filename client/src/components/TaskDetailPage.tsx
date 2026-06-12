@@ -428,6 +428,23 @@ function isKanbanSubtask(subtask: Task): boolean {
   return Boolean(subtask.hermes_kanban_task_id || subtask.external_source === 'hermes-kanban-sync');
 }
 
+// Load subtasks for a parent task. When the task carries a Hermes kanban link we
+// prefer syncing children from that kanban task — but if the link is stale/dead
+// (kanban task deleted) the sync returns 0 or throws. In that case we must fall
+// back to native AgentControl subtasks instead of showing an empty sidebar.
+async function loadSubtasksWithFallback(task: Task): Promise<{ subtasks: Task[] }> {
+  if (!task.hermes_kanban_task_id) {
+    return fetchSubtasks(task.id);
+  }
+  try {
+    const synced = await syncTaskKanbanSubtasksFromChat(task.id);
+    if (synced.subtasks.length > 0) return synced;
+  } catch {
+    // Stale/dead kanban link — fall through to native subtasks below.
+  }
+  return fetchSubtasks(task.id);
+}
+
 function getEffectiveDelegationStatus(subtask: Task): DelegationStatus | null {
   if (subtask.delegation_status) return subtask.delegation_status;
   if (subtask.status === 'done') return 'done';
@@ -962,9 +979,7 @@ export function TaskDetailPage() {
   const refreshSubtasks = useCallback(async (options?: { manual?: boolean }) => {
     if (!task || task.parent_task_id) return;
     try {
-      const res = await (task.hermes_kanban_task_id
-        ? syncTaskKanbanSubtasksFromChat(task.id)
-        : fetchSubtasks(task.id));
+      const res = await loadSubtasksWithFallback(task);
       setSubtasks(task.id, res.subtasks);
       if (options?.manual) {
         toast('Kanban subtasks synced', {
@@ -988,9 +1003,7 @@ export function TaskDetailPage() {
     let cancelled = false;
     const run = async () => {
       try {
-        const res = await (task.hermes_kanban_task_id
-          ? syncTaskKanbanSubtasksFromChat(task.id)
-          : fetchSubtasks(task.id));
+        const res = await loadSubtasksWithFallback(task);
         if (!cancelled) setSubtasks(task.id, res.subtasks);
       } catch {
         // Best-effort: subtask sidebar should never block the task detail page.
