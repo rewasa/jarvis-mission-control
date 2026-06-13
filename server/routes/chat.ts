@@ -652,5 +652,5 @@ chatRouter.get('/:id/live', (req, res) => {
   subscribe(task.id, res);
 
   const run = getRun(task.id);
-  if (run) sendSnapshot(res, run);
+  sendSnapshot(res, run ?? null);
 });

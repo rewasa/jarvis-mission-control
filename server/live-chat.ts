@@ -3,7 +3,7 @@ import { v4 as uuid } from 'uuid';
 import type { GoalStateSnapshot, LiveChatRun, LiveChatMessage, LiveChatRunStatus, TaskRunState, ToolProgressEvent } from '../shared/types.js';
 import type { StreamEvent } from './adapters/types.js';
 
-export type LiveChatEvent = StreamEvent | { type: 'snapshot'; run: LiveChatRun };
+export type LiveChatEvent = StreamEvent | { type: 'snapshot'; run: LiveChatRun | null };
 
 const runs = new Map<string, LiveChatRun>();
 const subscribers = new Map<string, Set<Response>>();
@@ -301,7 +301,7 @@ export function subscribe(taskId: string, res: Response): void {
   startKeepalive();
 }
 
-export function sendSnapshot(res: Response, run: LiveChatRun): void {
+export function sendSnapshot(res: Response, run: LiveChatRun | null): void {
   writeEvent(res, { type: 'snapshot', run });
 }
 

@@ -137,11 +137,20 @@ export function useTasks() {
       connect();
     };
 
+    function handleVisibility() {
+      if (!document.hidden) {
+        connect();
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibility);
+
     connect();
 
     return () => {
       cancelled = true;
       clearTimeout(retryTimeout);
+      document.removeEventListener('visibilitychange', handleVisibility);
       es?.close();
       stopPolling();
       esRef.current = null;

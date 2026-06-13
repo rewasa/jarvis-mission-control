@@ -26,7 +26,7 @@ type ChatMessage = Omit<TaskMessage, 'task_id'> & {
 };
 
 type LiveEvent =
-  | { type: 'snapshot'; run: LiveChatRun }
+  | { type: 'snapshot'; run: LiveChatRun | null }
   | { type: 'text_delta'; content?: string }
   | { type: 'thinking_delta'; content?: string }
   | {
@@ -257,12 +257,22 @@ export function useChat() {
     });
   }, [publishState]);
 
-  const applySnapshot = useCallback((run: LiveChatRun) => {
+  const applySnapshot = useCallback((run: LiveChatRun | null) => {
+    if (!run) {
+      const existingLiveRun = liveRunRef.current;
+      if (existingLiveRun) {
+        committedMessagesRef.current = messagesWithLiveRun(committedMessagesRef.current, existingLiveRun);
+      }
+      liveRunRef.current = null;
+      publishState();
+      return;
+    }
+
     if (taskIdRef.current && taskIdRef.current !== run.taskId) return;
     taskIdRef.current = run.taskId;
 
     const existingLiveRun = liveRunRef.current;
-    if (existingLiveRun && existingLiveRun.runId !== run.runId) {
+    if (existingLiveRun && run && existingLiveRun.runId !== run.runId) {
       committedMessagesRef.current = messagesWithLiveRun(committedMessagesRef.current, existingLiveRun);
     }
 
@@ -479,6 +489,27 @@ export function useChat() {
       if (postAbortRef.current === abort) postAbortRef.current = null;
     }
   }, [appendLocalSendError, openLiveSubscription]);
+
+  useEffect(() => {
+    function handleVisibilityChange() {
+      const currentTaskId = taskIdRef.current;
+      if (!document.hidden && currentTaskId) {
+        openLiveSubscription(currentTaskId);
+        fetchMessages(currentTaskId).then(({ messages: msgs, context: persistedContext }) => {
+          if (taskIdRef.current !== currentTaskId) return;
+          cacheConversation(currentTaskId, msgs as ChatMessage[], persistedContext ?? null);
+          committedMessagesRef.current = msgs as ChatMessage[];
+          liveContextRef.current = persistedContext ?? null;
+          publishState();
+        }).catch(console.error);
+      }
+    }
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [openLiveSubscription, publishState]);
 
   useEffect(() => () => {
     teardown();
